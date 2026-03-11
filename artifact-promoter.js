@@ -532,9 +532,55 @@ class ArtifactPromoter extends HTMLElement {
     spinner.style.display = 'inline';
 
     try {
-      this.setLoading(true, 'Resolving environments...');
-      // Use stored cluster IDs from the promotion hierarchy (already resolved during project load).
-      // Fall back to name-based lookup for RELEASE_STREAM / HYBRID types.
+      // ── Step 1: Fetch CI integrations from blueprint ─────────────────────────
+      this.setLoading(true, 'Checking CI integrations in blueprint...');
+      const ciIntRes = await fetch(`/cc-ui/v1/artifacts-ci/blueprint/${encodeURIComponent(this.selectedProject)}`);
+      if (ciIntRes.ok) {
+        const ciIntData = await ciIntRes.json();
+        this.ciIntegrations = Array.isArray(ciIntData) ? ciIntData : (ciIntData.content || []);
+      }
+      if (!this.ciIntegrations.length) {
+        this.showError('No CI integrations found in blueprint for this project. Configure CI/CD integrations first.');
+        return;
+      }
+
+      // Build normalised CI name → CI object map
+      const ciMap = {};
+      this.ciIntegrations.forEach(ci => {
+        if (ci.name) ciMap[ci.name.toLowerCase()] = ci;
+      });
+
+      // ── Step 2: Filter to services that have CI integration in blueprint ─────
+      // "Active in project" = has a CI integration entry in the blueprint.
+      // If the user picked specific services, intersect with CI-integrated ones.
+      const candidates = this.serviceFilter === 'specific'
+        ? [...this.selectedServiceNames]
+        : this.ciIntegrations.map(ci => ci.name).filter(Boolean);
+
+      const withCI  = [];  // service has CI integration → include
+      const withoutCI = []; // service requested but no CI → excluded
+
+      candidates.forEach(svcName => {
+        const norm = svcName.toLowerCase();
+        const ci = ciMap[norm] || ciMap[norm.replace(/-/g, '_')] || ciMap[norm.replace(/_/g, '-')];
+        ci ? withCI.push(svcName) : withoutCI.push(svcName);
+      });
+
+      if (withCI.length === 0) {
+        this.showError('None of the selected services have a CI integration in the blueprint.');
+        return;
+      }
+
+      if (withoutCI.length > 0) {
+        const preview = withoutCI.slice(0, 5).join(', ') + (withoutCI.length > 5 ? ` … (+${withoutCI.length - 5} more)` : '');
+        this.showComparisonAlert(
+          `<strong>${withoutCI.length} service(s) excluded</strong> — no CI integration in blueprint: ${this.esc(preview)}`,
+          'alert-info'
+        );
+      }
+
+      // ── Step 3: Fetch artifacts from source and target ───────────────────────
+      this.setLoading(true, 'Fetching artifacts from source and target environments...');
       const srcEntry = this.validEnvs.find(e => e.name === this.sourceEnv);
       const tgtEntry = this.validEnvs.find(e => e.name === this.targetEnv);
       const srcId = srcEntry?.clusterId || await this.getClusterId(this.selectedProject, this.sourceEnv);
@@ -542,80 +588,36 @@ class ArtifactPromoter extends HTMLElement {
       this.sourceClusterId = srcId;
       this.targetClusterId = tgtId;
 
-      this.setLoading(true, 'Fetching artifacts from both environments...');
       const [srcRes, tgtRes] = await Promise.all([
         fetch(`/cc-ui/v1/artifacts/${srcId}`),
         fetch(`/cc-ui/v1/artifacts/${tgtId}`)
       ]);
-
       if (!srcRes.ok) throw new Error(`Failed to fetch source artifacts (${srcRes.status})`);
       if (!tgtRes.ok) throw new Error(`Failed to fetch target artifacts (${tgtRes.status})`);
 
-      const srcData = await srcRes.json();
-      const tgtData = await tgtRes.json();
-
       const toArray = d => Array.isArray(d) ? d : (Array.isArray(d.content) ? d.content : Object.values(d));
-      this.sourceArtifacts = this.buildArtifactMap(toArray(srcData));
-      this.targetArtifacts = this.buildArtifactMap(toArray(tgtData));
+      this.sourceArtifacts = this.buildArtifactMap(toArray(await srcRes.json()));
+      this.targetArtifacts = this.buildArtifactMap(toArray(await tgtRes.json()));
 
-      // Build CI name → CI object map (normalised key)
-      const ciMap = {};
-      this.ciIntegrations.forEach(ci => {
-        if (ci.name) ciMap[ci.name.toLowerCase()] = ci;
-      });
-
-      // Decide which services to compare
-      let services;
-      if (this.serviceFilter === 'all') {
-        // Services = union of:
-        //   a) CI integrations that have an artifact in source env
-        //   b) All source artifacts that have a matching CI integration
-        const ciNames = new Set(this.ciIntegrations.map(ci => ci.name?.toLowerCase()).filter(Boolean));
-        const srcKeys = Object.keys(this.sourceArtifacts);
-
-        services = this.ciIntegrations
-          .filter(ci => ci.name)
-          .map(ci => ci.name)
-          .filter(name => {
-            const key = srcKeys.find(k => k.toLowerCase() === name.toLowerCase());
-            return Boolean(key);
-          });
-
-        // If no CI match found, fall back to all source artifacts (so user can still see the data)
-        if (services.length === 0) {
-          services = srcKeys;
-        }
-      } else {
-        services = [...this.selectedServiceNames];
-      }
-
-      // Build diff rows
-      this.diffs = services.map(svcName => {
-        const normName = svcName.toLowerCase();
-        const srcKey = Object.keys(this.sourceArtifacts).find(k => k.toLowerCase() === normName);
-        const tgtKey = Object.keys(this.targetArtifacts).find(k => k.toLowerCase() === normName);
+      // ── Step 4: Build diff rows for CI-integrated services ───────────────────
+      this.diffs = withCI.map(svcName => {
+        const norm = svcName.toLowerCase();
+        const ci = ciMap[norm] || ciMap[norm.replace(/-/g, '_')] || ciMap[norm.replace(/_/g, '-')];
+        const srcKey = Object.keys(this.sourceArtifacts).find(k => k.toLowerCase() === norm);
+        const tgtKey = Object.keys(this.targetArtifacts).find(k => k.toLowerCase() === norm);
         const srcArtifact = srcKey ? this.sourceArtifacts[srcKey] : null;
         const tgtArtifact = tgtKey ? this.targetArtifacts[tgtKey] : null;
-
-        // Find CI integration
-        const ci = ciMap[normName] ||
-          ciMap[normName.replace(/-/g, '_')] ||
-          ciMap[normName.replace(/_/g, '-')] ||
-          Object.values(ciMap).find(c => c.name?.toLowerCase().includes(normName));
-
         const srcUri = srcArtifact ? (srcArtifact.artifactUri || srcArtifact.tag || srcArtifact.buildId) : null;
         const tgtUri = tgtArtifact ? (tgtArtifact.artifactUri || tgtArtifact.tag || tgtArtifact.buildId) : null;
-
         let status;
-        if (!srcArtifact)            status = 'no-source';
-        else if (!tgtArtifact)       status = 'new';
-        else if (srcUri === tgtUri)  status = 'same';
-        else                         status = 'diff';
-
+        if (!srcArtifact)           status = 'no-source';
+        else if (!tgtArtifact)      status = 'new';
+        else if (srcUri === tgtUri) status = 'same';
+        else                        status = 'diff';
         return { svcName, ciId: ci?.id || null, ciName: ci?.name || null, srcArtifact, tgtArtifact, status };
       });
 
-      // Pre-select diff/new rows that have a CI ID and source artifact ID
+      // Pre-select diff/new rows that are promotable
       this.selectedDiffs = new Set(
         this.diffs
           .filter(d => (d.status === 'diff' || d.status === 'new') && d.ciId && d.srcArtifact?.id)
