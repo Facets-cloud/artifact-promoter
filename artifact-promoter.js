@@ -642,7 +642,7 @@ class ArtifactPromoter extends HTMLElement {
     } finally {
       this.setLoading(false);
       spinner.style.display = 'none';
-      this.validateForm();
+      compareBtn.disabled = false;  // re-enable for retry; don't call validateForm() — it clears errors
     }
   }
 
