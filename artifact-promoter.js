@@ -547,7 +547,7 @@ class ArtifactPromoter extends HTMLElement {
       // Build normalised CI name → CI object map
       const ciMap = {};
       this.ciIntegrations.forEach(ci => {
-        if (ci.name) ciMap[ci.name.toLowerCase()] = ci;
+        if (ci.ciName) ciMap[ci.ciName.toLowerCase()] = ci;
       });
 
       // ── Step 2: Filter to services that have CI integration in blueprint ─────
@@ -555,7 +555,7 @@ class ArtifactPromoter extends HTMLElement {
       // If the user picked specific services, intersect with CI-integrated ones.
       const candidates = this.serviceFilter === 'specific'
         ? [...this.selectedServiceNames]
-        : this.ciIntegrations.map(ci => ci.name).filter(Boolean);
+        : this.ciIntegrations.map(ci => ci.ciName).filter(Boolean);
 
       const withCI  = [];  // service has CI integration → include
       const withoutCI = []; // service requested but no CI → excluded
@@ -614,7 +614,7 @@ class ArtifactPromoter extends HTMLElement {
         else if (!tgtArtifact)      status = 'new';
         else if (srcUri === tgtUri) status = 'same';
         else                        status = 'diff';
-        return { svcName, ciId: ci?.id || null, ciName: ci?.name || null, srcArtifact, tgtArtifact, status };
+        return { svcName, ciId: ci?.id || null, ciName: ci?.ciName || null, srcArtifact, tgtArtifact, status };
       });
 
       // Pre-select diff/new rows that are promotable
@@ -734,7 +734,7 @@ class ArtifactPromoter extends HTMLElement {
     }
 
     this.ciIntegrations.forEach(ci => {
-      const name = ci.name || ci.ciName || ci.id;
+      const name = ci.ciName || ci.name || ci.id;
       const label = document.createElement('label');
       label.className = 'svc-chip';
       label.innerHTML = `<input type="checkbox" value="${this.esc(name)}"> ${this.esc(name)}`;
