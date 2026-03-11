@@ -375,6 +375,7 @@ class ArtifactPromoter extends HTMLElement {
     s.getElementById('src-sel').addEventListener('change', e => {
       this.sourceEnv = e.target.value;
       this.updateFlowHighlights();
+      this.updateTargetDropdown();
       this.validateForm();
     });
 
@@ -846,18 +847,46 @@ class ArtifactPromoter extends HTMLElement {
 
   // ─── State Helpers ─────────────────────────────────────────────────────────
 
+  updateTargetDropdown() {
+    const s = this.shadowRoot;
+    const tgtSel = s.getElementById('tgt-sel');
+    const srcEnv = this.validEnvs.find(e => e.name === this.sourceEnv);
+
+    if (!srcEnv) {
+      tgtSel.innerHTML = '<option value="">— Select target —</option>';
+      tgtSel.disabled = true;
+      this.targetEnv = '';
+      return;
+    }
+
+    const nextEnv = this.validEnvs.find(e => e.sequence === srcEnv.sequence + 1);
+    if (nextEnv) {
+      tgtSel.innerHTML = `<option value="${this.esc(nextEnv.name)}">${this.esc(nextEnv.name)}</option>`;
+      tgtSel.disabled = false;
+      this.targetEnv = nextEnv.name;
+    } else {
+      tgtSel.innerHTML = '<option value="">No next environment in flow</option>';
+      tgtSel.disabled = true;
+      this.targetEnv = '';
+    }
+    this.updateFlowHighlights();
+  }
+
   validateForm() {
     const s = this.shadowRoot;
     const btn = s.getElementById('compare-btn');
 
-    const srcSeq = this.validEnvs.find(e => e.name === this.sourceEnv)?.sequence;
-    const tgtSeq = this.validEnvs.find(e => e.name === this.targetEnv)?.sequence;
+    const srcEnv = this.validEnvs.find(e => e.name === this.sourceEnv);
+    const tgtEnv = this.validEnvs.find(e => e.name === this.targetEnv);
 
-    const envsOk = this.sourceEnv && this.targetEnv &&
-                   srcSeq !== undefined && tgtSeq !== undefined;
+    const envsOk = srcEnv && tgtEnv;
 
-    if (envsOk && srcSeq >= tgtSeq) {
-      this.showError('Target environment must come after source in the CI/CD promotion flow.');
+    if (envsOk && tgtEnv.sequence !== srcEnv.sequence + 1) {
+      const expected = this.validEnvs.find(e => e.sequence === srcEnv.sequence + 1);
+      const msg = expected
+        ? `Invalid target. The next step after '${srcEnv.name}' in the promotion flow is '${expected.name}'.`
+        : `'${srcEnv.name}' is the last environment in the promotion flow — nothing to promote to.`;
+      this.showError(msg);
       btn.disabled = true;
       return;
     }
