@@ -455,7 +455,7 @@ class ArtifactPromoter extends HTMLElement {
       if ((ciCd.registrationType || 'ENVIRONMENT') === 'ENVIRONMENT') {
         const envResponses = await Promise.all(
           hierarchies.map(h =>
-            fetch(`/cc-ui/v1/environments/${encodeURIComponent(h.registrationValue)}`)
+            fetch(`/cc-ui/v1/clusters/${encodeURIComponent(h.registrationValue)}`)
               .then(r => r.ok ? r.json() : null).catch(() => null)
           )
         );
