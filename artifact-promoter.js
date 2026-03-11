@@ -450,24 +450,21 @@ class ArtifactPromoter extends HTMLElement {
 
       const hierarchies = (ciCd.promotionHierarchies || []).sort((a, b) => a.sequence - b.sequence);
 
-      // For ENVIRONMENT type, registrationValue is a cluster ID — resolve to display names.
-      // For RELEASE_STREAM / HYBRID, registrationValue is a stream name — use as-is.
-      if ((ciCd.registrationType || 'ENVIRONMENT') === 'ENVIRONMENT') {
-        const envResponses = await Promise.all(
-          hierarchies.map(h =>
-            fetch(`/cc-ui/v1/clusters/${encodeURIComponent(h.registrationValue)}`)
-              .then(r => r.ok ? r.json() : null).catch(() => null)
-          )
-        );
-        this.validEnvs = hierarchies.map((h, i) => {
-          const detail = envResponses[i];
-          const displayName = detail?.name || detail?.clusterName || detail?.environmentName || h.registrationValue;
-          return { sequence: h.sequence, name: displayName, clusterId: h.registrationValue };
-        });
-      } else {
-        // RELEASE_STREAM / HYBRID — registrationValue is stream name, cluster resolved later
-        this.validEnvs = hierarchies.map(h => ({ sequence: h.sequence, name: h.registrationValue, clusterId: null }));
+      // Fetch all clusters for the project in one call to build clusterId → name map.
+      // Works for all registrationTypes: ENVIRONMENT (IDs), RELEASE_STREAM / HYBRID (stream names).
+      const clustersRes = await fetch(`/cc-ui/v1/stacks/${encodeURIComponent(stackName)}/clusters`);
+      const clusterNameMap = {};
+      if (clustersRes.ok) {
+        const clustersData = await clustersRes.json();
+        const list = Array.isArray(clustersData) ? clustersData : (clustersData.content || []);
+        list.forEach(c => { if (c.id) clusterNameMap[c.id] = c.name; });
       }
+
+      this.validEnvs = hierarchies.map(h => ({
+        sequence: h.sequence,
+        name: clusterNameMap[h.registrationValue] || h.registrationValue,
+        clusterId: h.registrationValue
+      }));
 
       if (ciIntRes.ok) {
         const ciIntData = await ciIntRes.json();
