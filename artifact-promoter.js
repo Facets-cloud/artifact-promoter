@@ -544,42 +544,13 @@ class ArtifactPromoter extends HTMLElement {
         return;
       }
 
-      // Build normalised CI name → CI object map
+      // Build normalised CI name → CI object map (global list)
       const ciMap = {};
       this.ciIntegrations.forEach(ci => {
         if (ci.ciName) ciMap[ci.ciName.toLowerCase()] = ci;
       });
 
-      // ── Step 2: Filter to services that have CI integration in blueprint ─────
-      // "Active in project" = has a CI integration entry in the blueprint.
-      // If the user picked specific services, intersect with CI-integrated ones.
-      const candidates = this.serviceFilter === 'specific'
-        ? [...this.selectedServiceNames]
-        : this.ciIntegrations.map(ci => ci.ciName).filter(Boolean);
-
-      const withCI  = [];  // service has CI integration → include
-      const withoutCI = []; // service requested but no CI → excluded
-
-      candidates.forEach(svcName => {
-        const norm = svcName.toLowerCase();
-        const ci = ciMap[norm] || ciMap[norm.replace(/-/g, '_')] || ciMap[norm.replace(/_/g, '-')];
-        ci ? withCI.push(svcName) : withoutCI.push(svcName);
-      });
-
-      if (withCI.length === 0) {
-        this.showError('None of the selected services have a CI integration in the blueprint.');
-        return;
-      }
-
-      if (withoutCI.length > 0) {
-        const preview = withoutCI.slice(0, 5).join(', ') + (withoutCI.length > 5 ? ` … (+${withoutCI.length - 5} more)` : '');
-        this.showComparisonAlert(
-          `<strong>${withoutCI.length} service(s) excluded</strong> — no CI integration in blueprint: ${this.esc(preview)}`,
-          'alert-info'
-        );
-      }
-
-      // ── Step 3: Fetch artifacts from source and target ───────────────────────
+      // ── Step 2: Fetch artifacts from source and target ───────────────────────
       this.setLoading(true, 'Fetching artifacts from source and target environments...');
       const srcEntry = this.validEnvs.find(e => e.name === this.sourceEnv);
       const tgtEntry = this.validEnvs.find(e => e.name === this.targetEnv);
@@ -599,9 +570,45 @@ class ArtifactPromoter extends HTMLElement {
       this.sourceArtifacts = this.buildArtifactMap(toArray(await srcRes.json()));
       this.targetArtifacts = this.buildArtifactMap(toArray(await tgtRes.json()));
 
-      // ── Step 4: Build diff rows for CI-integrated services ───────────────────
-      this.diffs = withCI.map(svcName => {
-        const norm = svcName.toLowerCase();
+      // ── Step 3: Filter to services enabled in this project's blueprint ────────
+      // The CI integrations API is global (stackName: null). Cross-reference with
+      // source artifacts to get only services actually deployed in this project.
+      // "Enabled in blueprint" = has a CI integration AND is present in source env.
+      //
+      // For "specific" filter: use user-selected names as candidates.
+      // For "all" filter: derive candidates from source artifact names.
+      const candidateNames = this.serviceFilter === 'specific'
+        ? [...this.selectedServiceNames]
+        : Object.keys(this.sourceArtifacts);
+
+      const withCI    = [];  // in source + has CI → include in diff
+      const withoutCI = [];  // in source but no CI → excluded
+
+      candidateNames.forEach(appName => {
+        const norm = appName.toLowerCase();
+        const ci = ciMap[norm] || ciMap[norm.replace(/-/g, '_')] || ciMap[norm.replace(/_/g, '-')];
+        ci ? withCI.push(appName) : withoutCI.push(appName);
+      });
+
+      if (withCI.length === 0) {
+        this.showError(
+          `No services deployed in '${this.sourceEnv}' have a CI integration. ` +
+          `Configure CI integrations for your services first.`
+        );
+        return;
+      }
+
+      if (withoutCI.length > 0) {
+        const preview = withoutCI.slice(0, 5).join(', ') + (withoutCI.length > 5 ? ` … (+${withoutCI.length - 5} more)` : '');
+        this.showComparisonAlert(
+          `<strong>${withoutCI.length} service(s) excluded</strong> — deployed in source but no CI integration: ${this.esc(preview)}`,
+          'alert-info'
+        );
+      }
+
+      // ── Step 4: Build diff rows ───────────────────────────────────────────────
+      this.diffs = withCI.map(appName => {
+        const norm = appName.toLowerCase();
         const ci = ciMap[norm] || ciMap[norm.replace(/-/g, '_')] || ciMap[norm.replace(/_/g, '-')];
         const srcKey = Object.keys(this.sourceArtifacts).find(k => k.toLowerCase() === norm);
         const tgtKey = Object.keys(this.targetArtifacts).find(k => k.toLowerCase() === norm);
@@ -614,7 +621,7 @@ class ArtifactPromoter extends HTMLElement {
         else if (!tgtArtifact)      status = 'new';
         else if (srcUri === tgtUri) status = 'same';
         else                        status = 'diff';
-        return { svcName, ciId: ci?.id || null, ciName: ci?.ciName || null, srcArtifact, tgtArtifact, status };
+        return { svcName: appName, ciId: ci?.id || null, ciName: ci?.ciName || null, srcArtifact, tgtArtifact, status };
       });
 
       // Pre-select diff/new rows that are promotable
