@@ -10,7 +10,7 @@ class ArtifactPromoter extends HTMLElement {
     this.projects = [];
     this.selectedProject = '';
     this.ciCdFlow = null;
-    this.validEnvs = [];        // [{sequence, name}] sorted by sequence
+    this.validEnvs = [];        // [{sequence, name, clusterId}] sorted by sequence
     this.registrationType = 'ENVIRONMENT';
     this.ciIntegrations = [];   // [{id, name, ...}]
     this.sourceEnv = '';
@@ -449,7 +449,25 @@ class ArtifactPromoter extends HTMLElement {
       this.registrationType = ciCd.registrationType || 'ENVIRONMENT';
 
       const hierarchies = (ciCd.promotionHierarchies || []).sort((a, b) => a.sequence - b.sequence);
-      this.validEnvs = hierarchies.map(h => ({ sequence: h.sequence, name: h.registrationValue }));
+
+      // For ENVIRONMENT type, registrationValue is a cluster ID — resolve to display names.
+      // For RELEASE_STREAM / HYBRID, registrationValue is a stream name — use as-is.
+      if ((ciCd.registrationType || 'ENVIRONMENT') === 'ENVIRONMENT') {
+        const envResponses = await Promise.all(
+          hierarchies.map(h =>
+            fetch(`/cc-ui/v1/environments/${encodeURIComponent(h.registrationValue)}`)
+              .then(r => r.ok ? r.json() : null).catch(() => null)
+          )
+        );
+        this.validEnvs = hierarchies.map((h, i) => {
+          const detail = envResponses[i];
+          const displayName = detail?.name || detail?.clusterName || detail?.environmentName || h.registrationValue;
+          return { sequence: h.sequence, name: displayName, clusterId: h.registrationValue };
+        });
+      } else {
+        // RELEASE_STREAM / HYBRID — registrationValue is stream name, cluster resolved later
+        this.validEnvs = hierarchies.map(h => ({ sequence: h.sequence, name: h.registrationValue, clusterId: null }));
+      }
 
       if (ciIntRes.ok) {
         const ciIntData = await ciIntRes.json();
@@ -517,10 +535,12 @@ class ArtifactPromoter extends HTMLElement {
 
     try {
       this.setLoading(true, 'Resolving environments...');
-      const [srcId, tgtId] = await Promise.all([
-        this.getClusterId(this.selectedProject, this.sourceEnv),
-        this.getClusterId(this.selectedProject, this.targetEnv)
-      ]);
+      // Use stored cluster IDs from the promotion hierarchy (already resolved during project load).
+      // Fall back to name-based lookup for RELEASE_STREAM / HYBRID types.
+      const srcEntry = this.validEnvs.find(e => e.name === this.sourceEnv);
+      const tgtEntry = this.validEnvs.find(e => e.name === this.targetEnv);
+      const srcId = srcEntry?.clusterId || await this.getClusterId(this.selectedProject, this.sourceEnv);
+      const tgtId = tgtEntry?.clusterId || await this.getClusterId(this.selectedProject, this.targetEnv);
       this.sourceClusterId = srcId;
       this.targetClusterId = tgtId;
 
