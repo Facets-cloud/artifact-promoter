@@ -12,7 +12,8 @@ class ArtifactPromoter extends HTMLElement {
     this.ciCdFlow = null;
     this.validEnvs = [];        // [{sequence, name, clusterId}] sorted by sequence
     this.registrationType = 'ENVIRONMENT';
-    this.ciIntegrations = [];   // [{id, name, ...}]
+    this.ciIntegrations = [];           // [{id, name, ...}]
+    this.enabledBlueprintServices = []; // service resource names enabled in blueprint
     this.sourceEnv = '';
     this.targetEnv = '';
     this.sourceClusterId = '';
@@ -449,9 +450,10 @@ class ArtifactPromoter extends HTMLElement {
     try {
       this.setLoading(true, 'Loading CI/CD flow...');
 
-      const [ciCdRes, ciIntRes] = await Promise.all([
+      const [ciCdRes, ciIntRes, bpRes] = await Promise.all([
         fetch(`/cc-ui/v1/ci-cd/${encodeURIComponent(stackName)}`),
-        fetch(`/cc-ui/v1/artifacts-ci/blueprint/${encodeURIComponent(stackName)}`)
+        fetch(`/cc-ui/v1/artifacts-ci/blueprint/${encodeURIComponent(stackName)}`),
+        fetch(`/cc-ui/v1/designer/${encodeURIComponent(stackName)}/master/files`)
       ]);
 
       if (!ciCdRes.ok) {
@@ -492,6 +494,18 @@ class ArtifactPromoter extends HTMLElement {
         this.ciIntegrations = all.filter(ci => ci.stackName === stackName);
       } else {
         this.ciIntegrations = [];
+      }
+
+      // Extract enabled service-type blueprint resources for the chips list
+      this.enabledBlueprintServices = [];
+      if (bpRes.ok) {
+        const bpList = await bpRes.json();
+        (Array.isArray(bpList) ? bpList : (bpList.content || [])).forEach(item => {
+          if (!item.resourceName) return;
+          const rType = (item.resourceType || item.type || '').toLowerCase();
+          if (rType && rType !== 'service') return;
+          if (item.info?.disabled !== true) this.enabledBlueprintServices.push(item.resourceName);
+        });
       }
 
       if (this.validEnvs.length === 0) {
@@ -649,19 +663,11 @@ class ArtifactPromoter extends HTMLElement {
         toShow.push(svcName);
       });
 
-      // Store with accurate reasons: distinguish "no CI" from "CI exists but not project-scoped"
-      this.noCiSvcs = noCiSvcs.map(name => {
-        const norm = name.toLowerCase();
-        const ciExistsGlobally = allCiNameNorms.has(norm) ||
-          allCiNameNorms.has(norm.replace(/-/g, '_')) ||
-          allCiNameNorms.has(norm.replace(/_/g, '-'));
-        return {
-          name,
-          reason: ciExistsGlobally
-            ? 'Artifact not present in source environment'
-            : 'No CI integration configured for this service'
-        };
-      });
+      // Store with reasons — use neutral wording since CI name may differ from blueprint resource name
+      this.noCiSvcs = noCiSvcs.map(name => ({
+        name,
+        reason: 'CI integration not configured or artifact not available in source environment'
+      }));
 
       if (toShow.length === 0 && this.noCiSvcs.length === 0) {
         this.showError('No enabled services found. Check blueprint and CI/CD configuration.');
@@ -861,13 +867,17 @@ class ArtifactPromoter extends HTMLElement {
     container.innerHTML = '';
     this.selectedServiceNames.clear();
 
-    if (!this.ciIntegrations.length) {
-      container.innerHTML = '<span style="font-size:13px;color:#94a3b8;">No CI integrations found for this project.</span>';
+    // Show enabled blueprint service names (real resource names, not CI names)
+    const names = this.enabledBlueprintServices.length > 0
+      ? this.enabledBlueprintServices
+      : this.ciIntegrations.map(ci => ci.ciName || ci.name || ci.id).filter(Boolean);
+
+    if (!names.length) {
+      container.innerHTML = '<span style="font-size:13px;color:#94a3b8;">No services found for this project.</span>';
       return;
     }
 
-    this.ciIntegrations.forEach(ci => {
-      const name = ci.ciName || ci.name || ci.id;
+    names.forEach(name => {
       const label = document.createElement('label');
       label.className = 'svc-chip';
       label.innerHTML = `<input type="checkbox" value="${this.esc(name)}"> ${this.esc(name)}`;
