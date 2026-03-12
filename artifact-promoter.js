@@ -660,10 +660,30 @@ class ArtifactPromoter extends HTMLElement {
         toShow.push(svcName);
       });
 
-      // Store with reasons — use neutral wording since CI name may differ from blueprint resource name
+      // ── Step 5.5: Probe CI endpoint to give accurate per-service reason ──────
+      // GET /artifacts-ci/{svcName}/artifacts: 200 = CI exists, 4xx = no CI.
+      const noCiReasons = {};
+      await Promise.all(noCiSvcs.map(async svcName => {
+        try {
+          const res = await fetch(`/cc-ui/v1/artifacts-ci/${encodeURIComponent(svcName)}/artifacts`);
+          if (res.ok) {
+            const raw = await res.json();
+            const arr = Array.isArray(raw) ? raw : (raw.content || []);
+            const hasSrc = arr.some(a => a.registrationValue === srcId && a.artifactId && a.artifactUri !== '-');
+            noCiReasons[svcName] = hasSrc
+              ? 'Artifact present in source but CI integration name mismatch — check CI configuration'
+              : 'Artifact not available in source environment';
+          } else {
+            noCiReasons[svcName] = 'CI integration not configured for this service';
+          }
+        } catch (_) {
+          noCiReasons[svcName] = 'CI integration not configured for this service';
+        }
+      }));
+
       this.noCiSvcs = noCiSvcs.map(name => ({
         name,
-        reason: 'CI integration not configured or artifact not available in source environment'
+        reason: noCiReasons[name] || 'CI integration not configured for this service'
       }));
 
       if (toShow.length === 0 && this.noCiSvcs.length === 0) {
