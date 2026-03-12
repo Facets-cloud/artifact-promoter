@@ -586,10 +586,21 @@ class ArtifactPromoter extends HTMLElement {
       }
 
       // ── Step 3: Build project-scoped CI map ───────────────────────────────────
+      // Also keep a broader name set (all CIs regardless of project) for accurate
+      // "no CI" vs "CI exists but no artifact" distinction in excluded table.
+      const allCiNameNorms = new Set();
       if (ciIntRes.ok) {
         const ciIntData = await ciIntRes.json();
         const all = Array.isArray(ciIntData) ? ciIntData : (ciIntData.content || []);
         this.ciIntegrations = all.filter(ci => ci.stackName === this.selectedProject);
+        all.forEach(ci => {
+          if (ci.ciName) {
+            const n = ci.ciName.toLowerCase();
+            allCiNameNorms.add(n);
+            allCiNameNorms.add(n.replace(/-/g, '_'));
+            allCiNameNorms.add(n.replace(/_/g, '-'));
+          }
+        });
       }
       if (!this.ciIntegrations.length) {
         this.showError('No CI integrations found for this project. Configure CI/CD integrations first.');
@@ -638,11 +649,32 @@ class ArtifactPromoter extends HTMLElement {
         toShow.push(svcName);
       });
 
-      // Store for renderDiffTable to populate excluded table
-      this.noCiSvcs = noCiSvcs;
+      // Store with accurate reasons: distinguish "no CI" from "CI exists but not project-scoped"
+      this.noCiSvcs = noCiSvcs.map(name => {
+        const norm = name.toLowerCase();
+        const ciExistsGlobally = allCiNameNorms.has(norm) ||
+          allCiNameNorms.has(norm.replace(/-/g, '_')) ||
+          allCiNameNorms.has(norm.replace(/_/g, '-'));
+        return {
+          name,
+          reason: ciExistsGlobally
+            ? 'Artifact not present in source environment'
+            : 'No CI integration configured for this service'
+        };
+      });
 
+      if (toShow.length === 0 && this.noCiSvcs.length === 0) {
+        this.showError('No enabled services found. Check blueprint and CI/CD configuration.');
+        return;
+      }
       if (toShow.length === 0) {
-        this.showError('No enabled services with CI integration found. Check blueprint and CI/CD configuration.');
+        // All services are excluded — still show the excluded table
+        this.diffs = [];
+        this.selectedDiffs = new Set();
+        this.renderDiffTable();
+        s.getElementById('results-card').style.display = 'block';
+        s.getElementById('src-label').textContent = this.sourceEnv;
+        s.getElementById('tgt-label').textContent = this.targetEnv;
         return;
       }
 
@@ -867,11 +899,9 @@ class ArtifactPromoter extends HTMLElement {
         : '');
 
     // ── Table 1: Excluded services ────────────────────────────────────────────
+    // noCiSvcs items are already {name, reason} objects
     const excludedRows = [
-      ...this.noCiSvcs.map(name => ({
-        name,
-        reason: 'No CI integration configured for this service'
-      })),
+      ...this.noCiSvcs,
       ...noSrc.map(d => ({
         name: d.svcName,
         reason: 'Artifact not present in source environment'
