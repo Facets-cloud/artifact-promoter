@@ -20,6 +20,7 @@ class ArtifactPromoter extends HTMLElement {
     this.sourceArtifacts = {};  // applicationName → Artifact (latest)
     this.targetArtifacts = {};  // applicationName → Artifact (latest)
     this.diffs = [];            // comparison rows
+    this.noCiSvcs = [];         // enabled in blueprint but no CI integration
     this.selectedDiffs = new Set();
     this.serviceFilter = 'all';
     this.selectedServiceNames = new Set();
@@ -327,22 +328,39 @@ class ArtifactPromoter extends HTMLElement {
             </label>
           </div>
 
-          <div id="comparison-alert" style="display:none;margin-bottom:10px;"></div>
+          <!-- Table 1: Excluded services (no CI / not in source) -->
+          <div id="excluded-section" style="display:none;margin-bottom:20px;">
+            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;margin-bottom:8px;">Excluded Services</div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Service</th>
+                    <th>Reason</th>
+                  </tr>
+                </thead>
+                <tbody id="excluded-tbody"></tbody>
+              </table>
+            </div>
+          </div>
 
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th style="width:36px;"></th>
-                  <th>Service</th>
-                  <th>CI</th>
-                  <th>Source (<span id="src-label">—</span>)</th>
-                  <th>Target (<span id="tgt-label">—</span>)</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody id="diff-tbody"></tbody>
-            </table>
+          <!-- Table 2: Promotable services -->
+          <div id="comparison-section">
+            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;margin-bottom:8px;">Promotable Services</div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th style="width:36px;"></th>
+                    <th>Service</th>
+                    <th>Source (<span id="src-label">—</span>)</th>
+                    <th>Target (<span id="tgt-label">—</span>)</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="diff-tbody"></tbody>
+              </table>
+            </div>
           </div>
 
           <div id="empty-diff" class="empty-state" style="display:none;">
@@ -551,17 +569,19 @@ class ArtifactPromoter extends HTMLElement {
         fetch(`/cc-ui/v1/artifacts/${tgtId}`)
       ]);
 
-      // ── Step 2: Build blueprint map — extract enabled resource names ─────────
+      // ── Step 2: Build blueprint map — only service-type enabled resources ────
       const blueprintDisabled = {};
-      const enabledResources = [];  // resource names where disabled !== true
+      const enabledResources = [];  // service-type resource names where disabled !== true
       if (bpRes.ok) {
         const bpList = await bpRes.json();
         (Array.isArray(bpList) ? bpList : (bpList.content || [])).forEach(item => {
-          if (item.resourceName) {
-            const disabled = item.info?.disabled === true;
-            blueprintDisabled[item.resourceName.toLowerCase()] = disabled;
-            if (!disabled) enabledResources.push(item.resourceName);
-          }
+          if (!item.resourceName) return;
+          // Only consider service-type resources for CI/CD promotion
+          const rType = (item.resourceType || item.type || '').toLowerCase();
+          if (rType && rType !== 'service') return;
+          const disabled = item.info?.disabled === true;
+          blueprintDisabled[item.resourceName.toLowerCase()] = disabled;
+          if (!disabled) enabledResources.push(item.resourceName);
         });
       }
 
@@ -618,19 +638,8 @@ class ArtifactPromoter extends HTMLElement {
         toShow.push(svcName);
       });
 
-      // Always show a clear summary of enabled services and their CI status
-      {
-        const totalEnabled = enabledResources.length;
-        const ciPart   = toShow.length > 0 ? `${toShow.join(', ')} have CI integration` : null;
-        const noCiPart = noCiSvcs.length > 0
-          ? `${noCiSvcs.join(', ')} ${noCiSvcs.length === 1 ? 'has' : 'have'} no CI integration`
-          : null;
-        const parts = [ciPart, noCiPart].filter(Boolean).join(' — ');
-        this.showComparisonAlert(
-          `<strong>${totalEnabled} service(s) enabled in blueprint:</strong> ${this.esc(parts)}`,
-          noCiSvcs.length > 0 ? 'alert-warning' : 'alert-info'
-        );
-      }
+      // Store for renderDiffTable to populate excluded table
+      this.noCiSvcs = noCiSvcs;
 
       if (toShow.length === 0) {
         this.showError('No enabled services with CI integration found. Check blueprint and CI/CD configuration.');
@@ -846,22 +855,51 @@ class ArtifactPromoter extends HTMLElement {
     const emptyDiv = s.getElementById('empty-diff');
     const summary = s.getElementById('results-summary');
 
-    const diffs = this.diffs.filter(d => d.status === 'diff' || d.status === 'new');
-    const same  = this.diffs.filter(d => d.status === 'same');
-    const noSrc = this.diffs.filter(d => d.status === 'no-source');
+    const promotable = this.diffs.filter(d => d.status === 'diff' || d.status === 'new');
+    const same       = this.diffs.filter(d => d.status === 'same');
+    const noSrc      = this.diffs.filter(d => d.status === 'no-source');
 
     summary.textContent =
-      `${this.diffs.length} service(s) — ` +
-      `${diffs.length} with differences, ` +
-      `${same.length} in sync` +
-      (noSrc.length ? `, ${noSrc.length} not in source` : '');
+      `${this.diffs.length + this.noCiSvcs.length} service(s) checked — ` +
+      `${promotable.length} with diff, ${same.length} in sync` +
+      (noSrc.length + this.noCiSvcs.length > 0
+        ? `, ${noSrc.length + this.noCiSvcs.length} excluded`
+        : '');
 
-    emptyDiv.style.display = diffs.length === 0 ? 'block' : 'none';
+    // ── Table 1: Excluded services ────────────────────────────────────────────
+    const excludedRows = [
+      ...this.noCiSvcs.map(name => ({
+        name,
+        reason: 'No CI integration configured for this service'
+      })),
+      ...noSrc.map(d => ({
+        name: d.svcName,
+        reason: 'Artifact not present in source environment'
+      }))
+    ];
 
-    if (!this.diffs.length) { tbody.innerHTML = ''; this.updatePromoteBar(); return; }
+    const excludedSection = s.getElementById('excluded-section');
+    const excludedTbody   = s.getElementById('excluded-tbody');
+    if (excludedRows.length > 0) {
+      excludedSection.style.display = 'block';
+      excludedTbody.innerHTML = excludedRows.map(r => `
+        <tr>
+          <td style="font-weight:500;">${this.esc(r.name)}</td>
+          <td style="color:#64748b;">${this.esc(r.reason)}</td>
+        </tr>
+      `).join('');
+    } else {
+      excludedSection.style.display = 'none';
+    }
 
-    const sorted = [...this.diffs].sort((a, b) => {
-      const o = { diff: 0, new: 1, 'no-source': 2, same: 3 };
+    // ── Table 2: Promotable services ──────────────────────────────────────────
+    const promotableRows = this.diffs.filter(d => d.status !== 'no-source');
+    emptyDiv.style.display = promotableRows.length === 0 ? 'block' : 'none';
+
+    if (!promotableRows.length) { tbody.innerHTML = ''; this.updatePromoteBar(); return; }
+
+    const sorted = [...promotableRows].sort((a, b) => {
+      const o = { diff: 0, new: 1, same: 2 };
       return (o[a.status] ?? 9) - (o[b.status] ?? 9);
     });
 
@@ -876,14 +914,9 @@ class ArtifactPromoter extends HTMLElement {
           <td>
             <input type="checkbox" class="row-check" data-svc="${this.esc(d.svcName)}"
               ${checked ? 'checked' : ''}
-              ${!canPromote ? `disabled title="${!d.ciId ? 'No CI integration' : 'Missing artifact ID'}"` : ''}>
+              ${!canPromote ? `disabled title="No diff to promote"` : ''}>
           </td>
           <td style="font-weight:500;">${this.esc(d.svcName)}</td>
-          <td>
-            ${d.ciId
-              ? `<span class="ci-ok">✓ CI</span>`
-              : `<span class="ci-no">No CI</span>`}
-          </td>
           <td>
             ${srcTag
               ? `<span class="tag src" title="${this.esc(srcTag)}">${this.esc(this.shorten(srcTag))}</span>`
@@ -1045,12 +1078,14 @@ class ArtifactPromoter extends HTMLElement {
   clearResults() {
     const s = this.shadowRoot;
     this.diffs = [];
+    this.noCiSvcs = [];
     this.selectedDiffs.clear();
     this.promoteResults = [];
     s.getElementById('results-card').style.display = 'none';
     s.getElementById('diff-tbody').innerHTML = '';
+    s.getElementById('excluded-tbody').innerHTML = '';
+    s.getElementById('excluded-section').style.display = 'none';
     s.getElementById('promote-results').style.display = 'none';
-    s.getElementById('comparison-alert').style.display = 'none';
   }
 
   resetEnvs() {
