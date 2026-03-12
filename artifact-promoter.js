@@ -551,17 +551,16 @@ class ArtifactPromoter extends HTMLElement {
         fetch(`/cc-ui/v1/artifacts/${tgtId}`)
       ]);
 
-      if (!srcRes.ok) throw new Error(`Failed to fetch source artifacts (${srcRes.status})`);
-      if (!tgtRes.ok) throw new Error(`Failed to fetch target artifacts (${tgtRes.status})`);
-
-      // ── Step 2: Build blueprint disabled map ──────────────────────────────────
-      // resourceName.toLowerCase() → true if disabled
+      // ── Step 2: Build blueprint map — extract enabled resource names ─────────
       const blueprintDisabled = {};
+      const enabledResources = [];  // resource names where disabled !== true
       if (bpRes.ok) {
         const bpList = await bpRes.json();
         (Array.isArray(bpList) ? bpList : (bpList.content || [])).forEach(item => {
           if (item.resourceName) {
-            blueprintDisabled[item.resourceName.toLowerCase()] = item.info?.disabled === true;
+            const disabled = item.info?.disabled === true;
+            blueprintDisabled[item.resourceName.toLowerCase()] = disabled;
+            if (!disabled) enabledResources.push(item.resourceName);
           }
         });
       }
@@ -579,9 +578,9 @@ class ArtifactPromoter extends HTMLElement {
       const ciMap = {};
       this.ciIntegrations.forEach(ci => { if (ci.ciName) ciMap[ci.ciName.toLowerCase()] = ci; });
 
-      // ── Step 4: Flatten artifacts ─────────────────────────────────────────────
-      // API returns { artifactoryName: { applicationName: artifactObj } } — flatten both levels.
+      // ── Step 4: Flatten cluster-level artifacts (RELEASE_STREAM / HYBRID) ────
       const toArray = d => {
+        if (!d) return [];
         if (Array.isArray(d)) return d;
         if (d && Array.isArray(d.content)) return d.content;
         const items = [];
@@ -594,19 +593,19 @@ class ArtifactPromoter extends HTMLElement {
         });
         return items;
       };
-      this.sourceArtifacts = this.buildArtifactMap(toArray(await srcRes.json()));
-      this.targetArtifacts = this.buildArtifactMap(toArray(await tgtRes.json()));
+      if (srcRes.ok) this.sourceArtifacts = this.buildArtifactMap(toArray(await srcRes.json()));
+      if (tgtRes.ok) this.targetArtifacts = this.buildArtifactMap(toArray(await tgtRes.json()));
 
-      // ── Step 5: Determine candidates and check blueprint + CI status ──────────
-      // For "all": candidates = all project-scoped CI integration names
-      // For "specific": candidates = user-selected names
+      // ── Step 5: Determine candidates ─────────────────────────────────────────
+      // For "all": use ENABLED blueprint resources (not CI integration names).
+      // For "specific": use user-selected names.
       const candidates = this.serviceFilter === 'specific'
         ? [...this.selectedServiceNames]
-        : this.ciIntegrations.map(ci => ci.ciName).filter(Boolean);
+        : enabledResources;
 
-      const toShow    = [];  // enabled + has CI → diff table
+      const toShow       = [];  // enabled + has CI → diff table
       const disabledSvcs = [];  // disabled in blueprint → warn & exclude
-      const noCiSvcs  = [];  // no CI integration → exclude (specific filter only)
+      const noCiSvcs     = [];  // no CI integration → exclude (for specific filter warning)
 
       candidates.forEach(svcName => {
         const norm = svcName.toLowerCase();
@@ -614,19 +613,19 @@ class ArtifactPromoter extends HTMLElement {
         const isDisabled = blueprintDisabled[norm] ??
           blueprintDisabled[norm.replace(/-/g, '_')] ??
           blueprintDisabled[norm.replace(/_/g, '-')];
-        if (!ci) { noCiSvcs.push(svcName); return; }
         if (isDisabled) { disabledSvcs.push(svcName); return; }
+        if (!ci) { noCiSvcs.push(svcName); return; }
         toShow.push(svcName);
       });
 
-      // Warn about disabled services (always relevant for specific filter; silent for all)
+      // Warn about disabled services
       if (disabledSvcs.length > 0) {
         this.showComparisonAlert(
           `<strong>${disabledSvcs.length} service(s) disabled in blueprint — excluded:</strong> ${this.esc(disabledSvcs.join(', '))}`,
           'alert-warning'
         );
       }
-      // For specific filter: also warn about no-CI picks
+      // For specific filter: warn about no-CI picks
       if (noCiSvcs.length > 0 && this.serviceFilter === 'specific') {
         const preview = noCiSvcs.slice(0, 5).join(', ') + (noCiSvcs.length > 5 ? ` … (+${noCiSvcs.length - 5} more)` : '');
         this.showComparisonAlert(
@@ -640,21 +639,75 @@ class ArtifactPromoter extends HTMLElement {
         return;
       }
 
-      // ── Step 6: Build diff rows ───────────────────────────────────────────────
+      // ── Step 6: Fetch per-CI artifacts for ENVIRONMENT-type integrations ──────
+      // ENVIRONMENT-type CIs don't use /artifacts/{clusterId}; use /artifacts-ci/{ciName}/artifacts.
+      const envCiArtifacts = {};  // ciName → { src: artifactItem|null, tgt: artifactItem|null }
+      const envTypeCis = toShow
+        .map(svcName => {
+          const norm = svcName.toLowerCase();
+          return ciMap[norm] || ciMap[norm.replace(/-/g, '_')] || ciMap[norm.replace(/_/g, '-')];
+        })
+        .filter((ci, idx, arr) => ci && ci.registrationType === 'ENVIRONMENT' &&
+          arr.findIndex(x => x && x.ciName === ci.ciName) === idx);  // deduplicate
+
+      if (envTypeCis.length > 0) {
+        await Promise.all(envTypeCis.map(async ci => {
+          try {
+            const res = await fetch(`/cc-ui/v1/artifacts-ci/${encodeURIComponent(ci.ciName)}/artifacts`);
+            if (res.ok) {
+              const raw = await res.json();
+              const arr = Array.isArray(raw) ? raw : (raw.content || []);
+              // Match by registrationValue === clusterId; skip entries with no real artifact (artifactUri === '-')
+              const srcItem = arr.find(a => a.registrationValue === srcId && a.artifactId && a.artifactUri !== '-') || null;
+              const tgtItem = arr.find(a => a.registrationValue === tgtId && a.artifactId && a.artifactUri !== '-') || null;
+              envCiArtifacts[ci.ciName] = { src: srcItem, tgt: tgtItem };
+            }
+          } catch (_) { /* leave undefined — treated as no artifact */ }
+        }));
+      }
+
+      // ── Step 7: Build diff rows ───────────────────────────────────────────────
       this.diffs = toShow.map(svcName => {
         const norm = svcName.toLowerCase();
         const ci = ciMap[norm] || ciMap[norm.replace(/-/g, '_')] || ciMap[norm.replace(/_/g, '-')];
-        const srcKey = Object.keys(this.sourceArtifacts).find(k => k.toLowerCase() === norm);
-        const tgtKey = Object.keys(this.targetArtifacts).find(k => k.toLowerCase() === norm);
-        const srcArtifact = srcKey ? this.sourceArtifacts[srcKey] : null;
-        const tgtArtifact = tgtKey ? this.targetArtifacts[tgtKey] : null;
-        const srcUri = srcArtifact ? (srcArtifact.artifactUri || srcArtifact.tag || srcArtifact.buildId) : null;
-        const tgtUri = tgtArtifact ? (tgtArtifact.artifactUri || tgtArtifact.tag || tgtArtifact.buildId) : null;
+
+        let srcArtifact = null;
+        let tgtArtifact = null;
+
+        if (ci && ci.registrationType === 'ENVIRONMENT') {
+          // Per-CI artifacts endpoint
+          const ciArts = envCiArtifacts[ci.ciName];
+          if (ciArts?.src) {
+            srcArtifact = {
+              id: ciArts.src.artifactId,
+              artifactUri: ciArts.src.artifactUri,
+              applicationName: svcName,
+            };
+          }
+          if (ciArts?.tgt) {
+            tgtArtifact = {
+              id: ciArts.tgt.artifactId,
+              artifactUri: ciArts.tgt.artifactUri,
+              applicationName: svcName,
+            };
+          }
+        } else {
+          // Cluster-level artifacts (RELEASE_STREAM / HYBRID)
+          const srcKey = Object.keys(this.sourceArtifacts).find(k => k.toLowerCase() === norm);
+          const tgtKey = Object.keys(this.targetArtifacts).find(k => k.toLowerCase() === norm);
+          srcArtifact = srcKey ? this.sourceArtifacts[srcKey] : null;
+          tgtArtifact = tgtKey ? this.targetArtifacts[tgtKey] : null;
+        }
+
+        const srcUri = srcArtifact?.artifactUri || srcArtifact?.tag || srcArtifact?.buildId || null;
+        const tgtUri = tgtArtifact?.artifactUri || tgtArtifact?.tag || tgtArtifact?.buildId || null;
+
         let status;
-        if (!srcArtifact)           status = 'no-source';
-        else if (!tgtArtifact)      status = 'new';
-        else if (srcUri === tgtUri) status = 'same';
-        else                        status = 'diff';
+        if (!srcArtifact || !srcUri) status = 'no-source';
+        else if (!tgtArtifact || !tgtUri) status = 'new';
+        else if (srcUri === tgtUri)       status = 'same';
+        else                              status = 'diff';
+
         return { svcName, ciId: ci?.id || null, ciName: ci?.ciName || null, srcArtifact, tgtArtifact, status };
       });
 
