@@ -490,20 +490,21 @@ class ArtifactPromoter extends HTMLElement {
       if (ciIntRes.ok) {
         const ciIntData = await ciIntRes.json();
         const all = Array.isArray(ciIntData) ? ciIntData : (ciIntData.content || []);
-        // Keep only project-scoped CI integrations (stackName matches this project)
-        this.ciIntegrations = all.filter(ci => ci.stackName === stackName);
+        // Project-scoped + global (stackName === null) CIs
+        this.ciIntegrations = all.filter(ci => ci.stackName === stackName || !ci.stackName);
       } else {
         this.ciIntegrations = [];
       }
 
-      // Extract enabled service-type blueprint resources for the chips list
+      // Extract enabled service-type blueprint resources for the chips list.
+      // If no resourceType field is present, include the item (safer fallback).
       this.enabledBlueprintServices = [];
       if (bpRes.ok) {
         const bpList = await bpRes.json();
         (Array.isArray(bpList) ? bpList : (bpList.content || [])).forEach(item => {
           if (!item.resourceName) return;
           const rType = (item.resourceType || item.type || '').toLowerCase();
-          if (rType && rType !== 'service') return;
+          if (rType && rType !== 'service') return;  // skip non-service types
           if (item.info?.disabled !== true) this.enabledBlueprintServices.push(item.resourceName);
         });
       }
@@ -599,29 +600,25 @@ class ArtifactPromoter extends HTMLElement {
         });
       }
 
-      // ── Step 3: Build project-scoped CI map ───────────────────────────────────
-      // Also keep a broader name set (all CIs regardless of project) for accurate
-      // "no CI" vs "CI exists but no artifact" distinction in excluded table.
-      const allCiNameNorms = new Set();
+      // ── Step 3: Build CI map ──────────────────────────────────────────────────
+      // Include project-scoped CIs + global CIs (stackName === null).
+      // Project-scoped entries take priority (added last to overwrite globals).
+      const ciMap = {};
       if (ciIntRes.ok) {
         const ciIntData = await ciIntRes.json();
         const all = Array.isArray(ciIntData) ? ciIntData : (ciIntData.content || []);
-        this.ciIntegrations = all.filter(ci => ci.stackName === this.selectedProject);
-        all.forEach(ci => {
-          if (ci.ciName) {
-            const n = ci.ciName.toLowerCase();
-            allCiNameNorms.add(n);
-            allCiNameNorms.add(n.replace(/-/g, '_'));
-            allCiNameNorms.add(n.replace(/_/g, '-'));
-          }
+        const projectCis = all.filter(ci => ci.stackName === this.selectedProject);
+        const globalCis  = all.filter(ci => !ci.stackName);
+        this.ciIntegrations = projectCis;
+        // Global CIs as fallback, project-scoped override
+        [...globalCis, ...projectCis].forEach(ci => {
+          if (ci.ciName) ciMap[ci.ciName.toLowerCase()] = ci;
         });
       }
-      if (!this.ciIntegrations.length) {
+      if (!Object.keys(ciMap).length) {
         this.showError('No CI integrations found for this project. Configure CI/CD integrations first.');
         return;
       }
-      const ciMap = {};
-      this.ciIntegrations.forEach(ci => { if (ci.ciName) ciMap[ci.ciName.toLowerCase()] = ci; });
 
       // ── Step 4: Flatten cluster-level artifacts (RELEASE_STREAM / HYBRID) ────
       const toArray = d => {
