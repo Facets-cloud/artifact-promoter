@@ -343,6 +343,8 @@ class ArtifactPromoter extends HTMLElement {
                 <tbody id="excluded-tbody"></tbody>
               </table>
             </div>
+            <div id="ci-names-hint" style="display:none;margin-top:10px;padding:10px 14px;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;font-size:12px;color:#78350f;line-height:1.6;">
+            </div>
           </div>
 
           <!-- Table 2: Promotable services -->
@@ -951,8 +953,20 @@ class ArtifactPromoter extends HTMLElement {
           <td style="color:#64748b;">${this.esc(r.reason)}</td>
         </tr>
       `).join('');
+
+      // Show registered CI names hint when any "not configured" rows exist
+      const hasNoCi = excludedRows.some(r => r.reason.includes('not configured'));
+      const hintEl = s.getElementById('ci-names-hint');
+      if (hasNoCi && this.ciIntegrations.length > 0) {
+        const ciNames = this.ciIntegrations.map(ci => ci.ciName).filter(Boolean).sort();
+        hintEl.innerHTML = `<strong>Registered CI integrations for this project:</strong> ${ciNames.map(n => `<code>${this.esc(n)}</code>`).join(', ')}. If a service name doesn't match a CI name, the CI may be registered under a different name.`;
+        hintEl.style.display = 'block';
+      } else {
+        hintEl.style.display = 'none';
+      }
     } else {
       excludedSection.style.display = 'none';
+      s.getElementById('ci-names-hint').style.display = 'none';
     }
 
     // ── Table 2: Promotable services ──────────────────────────────────────────
@@ -1148,6 +1162,7 @@ class ArtifactPromoter extends HTMLElement {
     s.getElementById('diff-tbody').innerHTML = '';
     s.getElementById('excluded-tbody').innerHTML = '';
     s.getElementById('excluded-section').style.display = 'none';
+    s.getElementById('ci-names-hint').style.display = 'none';
     s.getElementById('promote-results').style.display = 'none';
   }
 
