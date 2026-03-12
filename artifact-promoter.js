@@ -660,22 +660,28 @@ class ArtifactPromoter extends HTMLElement {
         toShow.push(svcName);
       });
 
-      // ── Step 5.5: Probe CI endpoint to give accurate per-service reason ──────
-      // GET /artifacts-ci/{svcName}/artifacts: 200 = CI exists, 4xx = no CI.
+      // ── Step 5.5: Two-phase probe for accurate per-service exclusion reason ───
+      // Phase 1: GET /artifacts-ci/name/{svcName} — does a CI with this exact name exist?
+      //   200 → CI exists but no artifact in source.
+      // Phase 2 (if phase 1 is 4xx): GET /artifacts/cluster/{srcId}/application/{svcName}
+      //   200 → artifact present under this app name (CI may use a different ciName).
+      //   4xx → no artifact and no matching CI → "not configured".
       const noCiReasons = {};
       await Promise.all(noCiSvcs.map(async svcName => {
         try {
-          const res = await fetch(`/cc-ui/v1/artifacts-ci/${encodeURIComponent(svcName)}/artifacts`);
-          if (res.ok) {
-            const raw = await res.json();
-            const arr = Array.isArray(raw) ? raw : (raw.content || []);
-            const hasSrc = arr.some(a => a.registrationValue === srcId && a.artifactId && a.artifactUri !== '-');
-            noCiReasons[svcName] = hasSrc
-              ? 'Artifact present in source but CI integration name mismatch — check CI configuration'
-              : 'Artifact not available in source environment';
-          } else {
-            noCiReasons[svcName] = 'CI integration not configured for this service';
+          // Phase 1: explicit CI name lookup
+          const ciRes = await fetch(`/cc-ui/v1/artifacts-ci/name/${encodeURIComponent(svcName)}`);
+          if (ciRes.ok) {
+            noCiReasons[svcName] = 'Artifact not available in source environment';
+            return;
           }
+          // Phase 2: check cluster artifact by application name (RELEASE_STREAM/HYBRID)
+          const artRes = await fetch(`/cc-ui/v1/artifacts/cluster/${encodeURIComponent(srcId)}/application/${encodeURIComponent(svcName)}`);
+          if (artRes.ok) {
+            noCiReasons[svcName] = 'Artifact available in source but CI integration name mismatch — check CI configuration';
+            return;
+          }
+          noCiReasons[svcName] = 'CI integration not configured for this service';
         } catch (_) {
           noCiReasons[svcName] = 'CI integration not configured for this service';
         }
