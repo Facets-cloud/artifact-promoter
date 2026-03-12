@@ -618,19 +618,17 @@ class ArtifactPromoter extends HTMLElement {
         toShow.push(svcName);
       });
 
-      // Warn about disabled services
-      if (disabledSvcs.length > 0) {
+      // Always show a clear summary of enabled services and their CI status
+      {
+        const totalEnabled = enabledResources.length;
+        const ciPart   = toShow.length > 0 ? `${toShow.join(', ')} have CI integration` : null;
+        const noCiPart = noCiSvcs.length > 0
+          ? `${noCiSvcs.join(', ')} ${noCiSvcs.length === 1 ? 'has' : 'have'} no CI integration`
+          : null;
+        const parts = [ciPart, noCiPart].filter(Boolean).join(' — ');
         this.showComparisonAlert(
-          `<strong>${disabledSvcs.length} service(s) disabled in blueprint — excluded:</strong> ${this.esc(disabledSvcs.join(', '))}`,
-          'alert-warning'
-        );
-      }
-      // For specific filter: warn about no-CI picks
-      if (noCiSvcs.length > 0 && this.serviceFilter === 'specific') {
-        const preview = noCiSvcs.slice(0, 5).join(', ') + (noCiSvcs.length > 5 ? ` … (+${noCiSvcs.length - 5} more)` : '');
-        this.showComparisonAlert(
-          `<strong>${noCiSvcs.length} service(s) excluded</strong> — no CI integration: ${this.esc(preview)}`,
-          'alert-info'
+          `<strong>${totalEnabled} service(s) enabled in blueprint:</strong> ${this.esc(parts)}`,
+          noCiSvcs.length > 0 ? 'alert-warning' : 'alert-info'
         );
       }
 
@@ -1095,9 +1093,9 @@ class ArtifactPromoter extends HTMLElement {
 
   statusBadge(status) {
     const map = {
-      diff:       `<span class="badge badge-diff">Different</span>`,
-      new:        `<span class="badge badge-new">New in source</span>`,
-      same:       `<span class="badge badge-same">In sync</span>`,
+      diff:       `<span class="badge badge-diff">Diff</span>`,
+      new:        `<span class="badge badge-new">Diff</span>`,
+      same:       `<span class="badge badge-same">No Diff</span>`,
       'no-source':`<span class="badge badge-missing">Not in source</span>`
     };
     return map[status] || `<span class="badge">${status}</span>`;
