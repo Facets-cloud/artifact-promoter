@@ -566,7 +566,23 @@ class ArtifactPromoter extends HTMLElement {
       if (!srcRes.ok) throw new Error(`Failed to fetch source artifacts (${srcRes.status})`);
       if (!tgtRes.ok) throw new Error(`Failed to fetch target artifacts (${tgtRes.status})`);
 
-      const toArray = d => Array.isArray(d) ? d : (Array.isArray(d.content) ? d.content : Object.values(d));
+      // The artifacts API returns { artifactoryName: { applicationName: artifactObj } }
+      // Flatten both levels to get a flat array of artifact objects.
+      const toArray = d => {
+        if (Array.isArray(d)) return d;
+        if (d && Array.isArray(d.content)) return d.content;
+        const items = [];
+        Object.values(d).forEach(group => {
+          if (group && typeof group === 'object' && !Array.isArray(group)) {
+            Object.values(group).forEach(artifact => {
+              if (artifact && typeof artifact === 'object' && artifact.applicationName) {
+                items.push(artifact);
+              }
+            });
+          }
+        });
+        return items;
+      };
       this.sourceArtifacts = this.buildArtifactMap(toArray(await srcRes.json()));
       this.targetArtifacts = this.buildArtifactMap(toArray(await tgtRes.json()));
 
