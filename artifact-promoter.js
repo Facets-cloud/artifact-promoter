@@ -78,8 +78,8 @@ class ArtifactPromoter extends HTMLElement {
           margin-bottom: 20px; box-shadow: var(--shadow);
         }
         .card-title {
-          font-size: 11px; font-weight: 700; text-transform: uppercase;
-          letter-spacing: 0.07em; color: #94a3b8; margin-bottom: 14px;
+          font-size: 12px; font-weight: 800; text-transform: uppercase;
+          letter-spacing: 0.07em; color: #1a1a2e; margin-bottom: 14px;
         }
 
         /* Forms */
@@ -163,8 +163,8 @@ class ArtifactPromoter extends HTMLElement {
 
         /* Section label (reusable for sub-sections in cards) */
         .section-lbl {
-          font-size: 11px; font-weight: 700; text-transform: uppercase;
-          letter-spacing: 0.06em; color: #94a3b8; margin-bottom: 10px;
+          font-size: 11px; font-weight: 800; text-transform: uppercase;
+          letter-spacing: 0.06em; color: #1a1a2e; margin-bottom: 10px;
         }
 
         /* Services */
@@ -255,7 +255,7 @@ class ArtifactPromoter extends HTMLElement {
           gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
           padding-bottom: 14px; border-bottom: 1px solid var(--border);
         }
-        .section-title { font-size: 15px; font-weight: 600; color: #1e293b; }
+        .section-title { font-size: 15px; font-weight: 800; color: #1a1a2e; }
         .summary-text  { font-size: 12px; color: #64748b; margin-top: 4px; }
 
         /* Promote bottom bar */
