@@ -143,8 +143,8 @@ class ArtifactPromoter extends HTMLElement {
           cursor: pointer; transition: all 0.15s; white-space: nowrap; user-select: none;
         }
         .flow-node:hover:not(.flow-node-end) { border-color: var(--primary); color: var(--primary); background: #eef2ff; }
-        .flow-node.source { background: var(--primary); border-color: var(--primary); color: white; }
-        .flow-node.target { background: var(--success); border-color: var(--success); color: white; }
+        .flow-node.source { background: #eef2ff; border-color: var(--primary); color: var(--primary); }
+        .flow-node.target { background: #f0fdf4; border-color: var(--success); color: #166534; }
         .flow-node.flow-node-end { cursor: default; opacity: 0.45; }
         .flow-connector {
           display: flex; align-items: center; color: #cbd5e1;
