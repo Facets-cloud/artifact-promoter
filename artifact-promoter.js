@@ -142,9 +142,9 @@ class ArtifactPromoter extends HTMLElement {
           background: white; font-size: 13px; font-weight: 500; color: #475569;
           cursor: pointer; transition: all 0.15s; white-space: nowrap; user-select: none;
         }
-        .flow-node:hover:not(.flow-node-end) { border-color: var(--primary); color: var(--primary); background: #eef2ff; }
-        .flow-node.source { background: #eef2ff; border-color: var(--primary); color: var(--primary); }
-        .flow-node.target { background: #f0fdf4; border-color: var(--success); color: #166534; }
+        .flow-node:hover:not(.flow-node-end):not(.source):not(.target) { border-color: var(--primary); color: var(--primary); }
+        .flow-node.source { background: white; border-color: var(--primary); color: var(--primary); font-weight: 600; }
+        .flow-node.target { background: white; border-color: var(--success); color: var(--success); font-weight: 600; }
         .flow-node.flow-node-end { cursor: default; opacity: 0.45; }
         .flow-connector {
           display: flex; align-items: center; color: #cbd5e1;
@@ -182,7 +182,7 @@ class ArtifactPromoter extends HTMLElement {
           font-size: 13px; cursor: pointer; user-select: none; transition: all 0.1s;
         }
         .svc-chip:hover { border-color: var(--primary); }
-        .svc-chip.on { background: #eef2ff; border-color: var(--primary); color: var(--primary); }
+        .svc-chip.on { background: white; border-color: var(--primary); color: var(--primary); font-weight: 600; }
         .svc-chip input { cursor: pointer; accent-color: var(--primary); }
 
         /* Table */
