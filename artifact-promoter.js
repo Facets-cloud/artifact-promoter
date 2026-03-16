@@ -246,12 +246,10 @@ class ArtifactPromoter extends HTMLElement {
         }
         .result-row:last-child { border-bottom: none; }
 
-        /* Loading overlay */
+        /* Loading indicator */
         .loading-overlay {
-          display: none; align-items: center; justify-content: center;
-          gap: 10px; padding: 12px; background: #f8fafc;
-          border-radius: 6px; font-size: 13px; color: #475569;
-          margin-bottom: 12px;
+          display: none; align-items: center; gap: 8px;
+          font-size: 12px; color: #64748b; padding: 6px 0; margin-top: 8px;
         }
         .loading-overlay.on { display: flex; }
         .spinner {
@@ -284,11 +282,7 @@ class ArtifactPromoter extends HTMLElement {
         </div>
 
         <!-- Global messages -->
-        <div id="global-error"   class="alert alert-error"   style="display:none;"></div>
-        <div id="global-loading" class="loading-overlay">
-          <div class="spinner"></div>
-          <span id="loading-msg">Loading...</span>
-        </div>
+        <div id="global-error" class="alert alert-error" style="display:none;"></div>
 
         <!-- Configuration Card -->
         <div class="card">
@@ -335,6 +329,12 @@ class ArtifactPromoter extends HTMLElement {
               </label>
             </div>
             <div id="svc-chips" class="services-chips"></div>
+          </div>
+
+          <!-- Inline loader -->
+          <div id="global-loading" class="loading-overlay">
+            <div class="spinner"></div>
+            <span id="loading-msg">Loading...</span>
           </div>
 
           <!-- Compare button -->
