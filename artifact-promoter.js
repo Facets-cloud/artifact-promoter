@@ -74,12 +74,12 @@ class ArtifactPromoter extends HTMLElement {
         /* Cards */
         .card {
           background: #fff; border: 1px solid var(--border);
-          border-radius: var(--radius); padding: 20px;
-          margin-bottom: 16px; box-shadow: var(--shadow);
+          border-radius: var(--radius); padding: 24px;
+          margin-bottom: 20px; box-shadow: var(--shadow);
         }
         .card-title {
           font-size: 11px; font-weight: 700; text-transform: uppercase;
-          letter-spacing: 0.07em; color: #94a3b8; margin-bottom: 16px;
+          letter-spacing: 0.07em; color: #94a3b8; margin-bottom: 14px;
         }
 
         /* Forms */
@@ -123,33 +123,44 @@ class ArtifactPromoter extends HTMLElement {
         /* Unified CI/CD Flow Widget */
         .flow-widget {
           background: var(--bg-light); border: 1px solid var(--border);
-          border-radius: 8px; padding: 16px 20px;
+          border-radius: 8px; padding: 16px 18px;
         }
+        .flow-hint {
+          font-size: 12px; color: #94a3b8; margin-bottom: 14px; line-height: 1.5;
+        }
+        .flow-hint strong { color: #64748b; font-weight: 600; }
         .flow-track {
-          display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+          display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
         }
         .flow-node {
-          padding: 7px 16px; border-radius: 6px; border: 2px solid var(--border);
+          padding: 6px 14px; border-radius: 6px; border: 2px solid var(--border);
           background: white; font-size: 13px; font-weight: 500; color: #475569;
           cursor: pointer; transition: all 0.15s; white-space: nowrap; user-select: none;
         }
         .flow-node:hover:not(.flow-node-end) { border-color: var(--primary); color: var(--primary); background: #eef2ff; }
         .flow-node.source { background: var(--primary); border-color: var(--primary); color: white; }
         .flow-node.target { background: var(--success); border-color: var(--success); color: white; }
-        .flow-node.flow-node-end { cursor: default; opacity: 0.5; }
+        .flow-node.flow-node-end { cursor: default; opacity: 0.45; }
         .flow-connector {
           display: flex; align-items: center; color: #cbd5e1;
-          font-size: 20px; flex-shrink: 0; line-height: 1; transition: color 0.15s;
+          font-size: 18px; flex-shrink: 0; line-height: 1; transition: color 0.15s;
         }
         .flow-connector.active { color: var(--primary); }
         .flow-pair-info {
-          display: flex; align-items: center; gap: 6px; margin-top: 12px;
-          padding-top: 10px; border-top: 1px solid var(--border); font-size: 13px; color: #475569;
+          display: flex; align-items: center; gap: 6px; margin-top: 14px;
+          padding-top: 12px; border-top: 1px solid var(--border);
+          font-size: 13px; color: #475569;
         }
         .pair-src { font-weight: 600; color: var(--primary); }
         .pair-tgt { font-weight: 600; color: var(--success); }
-        .pair-arrow { color: #94a3b8; font-size: 16px; }
+        .pair-arrow { color: #94a3b8; font-size: 15px; }
         .pair-hint { font-size: 11px; color: #94a3b8; margin-left: 2px; }
+
+        /* Section label (reusable for sub-sections in cards) */
+        .section-lbl {
+          font-size: 11px; font-weight: 700; text-transform: uppercase;
+          letter-spacing: 0.06em; color: #94a3b8; margin-bottom: 10px;
+        }
 
         /* Services */
         .radio-group { display: flex; gap: 20px; margin: 8px 0; }
@@ -173,11 +184,11 @@ class ArtifactPromoter extends HTMLElement {
         .table-wrap { overflow-x: auto; margin-top: 4px; }
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
         thead th {
-          background: var(--bg-light); padding: 10px 12px; text-align: left;
-          font-weight: 600; color: #374151; border-bottom: 2px solid var(--border);
-          white-space: nowrap;
+          background: var(--bg-light); padding: 10px 14px; text-align: left;
+          font-weight: 600; font-size: 12px; color: #374151;
+          border-bottom: 2px solid var(--border); white-space: nowrap;
         }
-        tbody td { padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+        tbody td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; font-size: 13px; }
         tbody tr:last-child td { border-bottom: none; }
         tbody tr:hover { background: #f8fafc; }
 
@@ -207,17 +218,18 @@ class ArtifactPromoter extends HTMLElement {
         /* Toolbar */
         .toolbar {
           display: flex; align-items: center; justify-content: space-between;
-          gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+          gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+          padding-bottom: 14px; border-bottom: 1px solid var(--border);
         }
-        .section-title { font-size: 15px; font-weight: 600; color: #1a1a2e; }
-        .summary-text  { font-size: 12px; color: #64748b; margin-top: 3px; }
+        .section-title { font-size: 15px; font-weight: 600; color: #1e293b; }
+        .summary-text  { font-size: 12px; color: #64748b; margin-top: 4px; }
 
         /* Promote bottom bar */
         .promote-bar {
-          display: flex; align-items: center; gap: 12px; margin-top: 16px;
+          display: flex; align-items: center; gap: 12px; margin-top: 20px;
           padding-top: 16px; border-top: 1px solid var(--border); flex-wrap: wrap;
         }
-        .promote-note { font-size: 12px; color: #64748b; }
+        .promote-note { font-size: 12px; color: #64748b; font-style: italic; }
 
         /* Results */
         .results-panel { margin-top: 16px; }
@@ -286,22 +298,20 @@ class ArtifactPromoter extends HTMLElement {
           </div>
 
           <!-- Unified CI/CD Flow + Env Picker -->
-          <div id="env-flow-widget" style="display:none; margin-bottom:16px;">
-            <p class="card-title" style="margin-bottom:10px;">CI/CD Promotion Flow</p>
+          <div id="env-flow-widget" style="display:none; margin-bottom:20px;">
+            <p class="card-title">CI/CD Promotion Flow</p>
             <div class="flow-widget">
+              <p class="flow-hint">Click a stage to set it as <strong>source</strong> — the next stage auto-selects as <strong>target</strong>.</p>
               <div id="flow-nodes" class="flow-track"></div>
               <div id="flow-pair-summary" class="flow-pair-info" style="display:none;"></div>
             </div>
-            <p style="font-size:11px;color:#94a3b8;margin-top:8px;">
-              Click a stage to set it as <strong>source</strong> — the next stage auto-selects as <strong>target</strong>.
-            </p>
           </div>
 
           <!-- Registration-type info alert (shown for non-ENVIRONMENT types) -->
           <div id="comparison-alert" class="alert" style="display:none;"></div>
 
           <!-- Services filter -->
-          <div style="margin-bottom:16px;">
+          <div style="margin-bottom:20px;">
             <label>Services to Promote</label>
             <div class="radio-group">
               <label class="radio-opt">
@@ -336,8 +346,8 @@ class ArtifactPromoter extends HTMLElement {
           </div>
 
           <!-- Table 1: Excluded services (no CI / not in source) -->
-          <div id="excluded-section" style="display:none;margin-bottom:20px;">
-            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;margin-bottom:8px;">Excluded Services</div>
+          <div id="excluded-section" style="display:none;margin-bottom:24px;">
+            <div class="section-lbl">Excluded Services</div>
             <div class="table-wrap">
               <table>
                 <thead>
@@ -353,7 +363,7 @@ class ArtifactPromoter extends HTMLElement {
 
           <!-- Table 2: Promotable services -->
           <div id="comparison-section">
-            <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#94a3b8;margin-bottom:8px;">Promotable Services</div>
+            <div class="section-lbl">Promotable Services</div>
             <div class="table-wrap">
               <table>
                 <thead>
