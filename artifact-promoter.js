@@ -126,9 +126,14 @@ class ArtifactPromoter extends HTMLElement {
           border-radius: 8px; padding: 16px 18px;
         }
         .flow-hint {
-          font-size: 12px; color: #94a3b8; margin-bottom: 14px; line-height: 1.5;
+          font-size: 12px; color: #94a3b8; margin-bottom: 10px; line-height: 1.5;
         }
         .flow-hint strong { color: #64748b; font-weight: 600; }
+
+        /* Section dividers */
+        .divider {
+          border: none; border-top: 1px solid var(--border); margin: 20px 0;
+        }
         .flow-track {
           display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
         }
@@ -191,6 +196,8 @@ class ArtifactPromoter extends HTMLElement {
         tbody td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; font-size: 13px; }
         tbody tr:last-child td { border-bottom: none; }
         tbody tr:hover { background: #f8fafc; }
+        .row-check { cursor: pointer; accent-color: var(--primary); }
+        .row-check:disabled { opacity: 0.35; cursor: not-allowed; }
 
         /* Badges */
         .badge {
@@ -297,18 +304,22 @@ class ArtifactPromoter extends HTMLElement {
             </div>
           </div>
 
+          <hr class="divider">
+
           <!-- Unified CI/CD Flow + Env Picker -->
-          <div id="env-flow-widget" style="display:none; margin-bottom:20px;">
+          <div id="env-flow-widget" style="display:none;">
             <p class="card-title">CI/CD Promotion Flow</p>
+            <p class="flow-hint">Click a stage to set it as <strong>source</strong> — the next stage auto-selects as <strong>target</strong>.</p>
             <div class="flow-widget">
-              <p class="flow-hint">Click a stage to set it as <strong>source</strong> — the next stage auto-selects as <strong>target</strong>.</p>
               <div id="flow-nodes" class="flow-track"></div>
               <div id="flow-pair-summary" class="flow-pair-info" style="display:none;"></div>
             </div>
           </div>
 
           <!-- Registration-type info alert (shown for non-ENVIRONMENT types) -->
-          <div id="comparison-alert" class="alert" style="display:none;"></div>
+          <div id="comparison-alert" class="alert" style="display:none;margin-top:12px;"></div>
+
+          <hr class="divider" id="svc-divider" style="display:none;">
 
           <!-- Services filter -->
           <div style="margin-bottom:20px;">
@@ -363,6 +374,7 @@ class ArtifactPromoter extends HTMLElement {
 
           <!-- Table 2: Promotable services -->
           <div id="comparison-section">
+            <hr class="divider" id="tables-divider" style="display:none;">
             <div class="section-lbl">Promotable Services</div>
             <div class="table-wrap">
               <table>
@@ -861,6 +873,8 @@ class ArtifactPromoter extends HTMLElement {
     if (!this.validEnvs.length) { widget.style.display = 'none'; return; }
 
     widget.style.display = 'block';
+    const svcDiv = this.shadowRoot.getElementById('svc-divider');
+    if (svcDiv) svcDiv.style.display = 'block';
     nodesEl.innerHTML = this.validEnvs.map((env, i) => {
       const isLast = i === this.validEnvs.length - 1;
       const connector = i > 0
@@ -982,6 +996,7 @@ class ArtifactPromoter extends HTMLElement {
 
     const excludedSection = s.getElementById('excluded-section');
     const excludedTbody   = s.getElementById('excluded-tbody');
+    const tablesDivider   = s.getElementById('tables-divider');
     if (excludedRows.length > 0) {
       excludedSection.style.display = 'block';
       excludedTbody.innerHTML = excludedRows.map(r => `
@@ -990,9 +1005,10 @@ class ArtifactPromoter extends HTMLElement {
           <td style="color:#64748b;">${this.esc(r.reason)}</td>
         </tr>
       `).join('');
-
+      if (tablesDivider) tablesDivider.style.display = 'block';
     } else {
       excludedSection.style.display = 'none';
+      if (tablesDivider) tablesDivider.style.display = 'none';
     }
 
     // ── Table 2: Promotable services ──────────────────────────────────────────
@@ -1011,13 +1027,22 @@ class ArtifactPromoter extends HTMLElement {
       const checked = this.selectedDiffs.has(d.svcName);
       const srcTag = this.artifactLabel(d.srcArtifact);
       const tgtTag = this.artifactLabel(d.tgtArtifact);
+      const disabledTooltip = !canPromote
+        ? (d.status === 'same'
+            ? 'Source and target are already in sync — no promotion needed'
+            : !d.ciId
+            ? 'No CI integration linked for this service'
+            : !d.srcArtifact?.id
+            ? 'No artifact ID available in source'
+            : 'Cannot promote this service')
+        : '';
 
       return `
         <tr>
           <td>
             <input type="checkbox" class="row-check" data-svc="${this.esc(d.svcName)}"
               ${checked ? 'checked' : ''}
-              ${!canPromote ? `disabled title="No diff to promote"` : ''}>
+              ${!canPromote ? `disabled title="${this.esc(disabledTooltip)}"` : ''}>
           </td>
           <td style="font-weight:500;">${this.esc(d.svcName)}</td>
           <td>
@@ -1186,6 +1211,7 @@ class ArtifactPromoter extends HTMLElement {
     s.getElementById('env-flow-widget').style.display = 'none';
     s.getElementById('flow-nodes').innerHTML = '';
     s.getElementById('flow-pair-summary').style.display = 'none';
+    s.getElementById('svc-divider').style.display = 'none';
     s.getElementById('compare-btn').disabled = true;
   }
 
