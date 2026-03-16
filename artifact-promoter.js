@@ -969,11 +969,10 @@ class ArtifactPromoter extends HTMLElement {
     if (this.sourceEnv && this.targetEnv) {
       summary.style.display = 'flex';
       summary.innerHTML = `
-        <span>Promoting:</span>
+        <span>Promoting from</span>
         <span class="pair-src">${this.esc(this.sourceEnv)}</span>
         <span class="pair-arrow">›</span>
         <span class="pair-tgt">${this.esc(this.targetEnv)}</span>
-        <span class="pair-hint">(next stage in CI/CD flow)</span>
       `;
     } else if (this.sourceEnv) {
       summary.style.display = 'flex';
