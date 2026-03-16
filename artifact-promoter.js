@@ -170,20 +170,47 @@ class ArtifactPromoter extends HTMLElement {
         /* Services */
         .radio-group { display: flex; gap: 20px; margin: 8px 0; }
         .radio-opt { display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
-        .services-chips {
-          display: none; flex-wrap: wrap; gap: 8px; margin-top: 8px;
-          max-height: 180px; overflow-y: auto; padding: 10px;
-          background: var(--bg-light); border: 1px solid var(--border); border-radius: 6px;
+
+        /* Multi-select dropdown */
+        .svc-select-wrap { margin-top: 10px; }
+        .svc-dropdown-wrap { position: relative; }
+        .svc-dropdown-trigger {
+          display: flex; justify-content: space-between; align-items: center;
+          border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
+          font-size: 13px; background: white; cursor: pointer; user-select: none;
+          min-height: 38px; transition: border-color 0.15s; color: #94a3b8;
         }
-        .services-chips.open { display: flex; }
-        .svc-chip {
-          display: flex; align-items: center; gap: 5px; padding: 4px 10px;
-          background: white; border: 1px solid var(--border); border-radius: 20px;
-          font-size: 13px; cursor: pointer; user-select: none; transition: all 0.1s;
+        .svc-dropdown-trigger:hover { border-color: var(--primary); }
+        .svc-dropdown-trigger.open { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.1); color: #1a1a2e; }
+        .svc-dropdown-caret { font-size: 11px; color: #94a3b8; transition: transform 0.15s; flex-shrink: 0; }
+        .svc-dropdown-trigger.open .svc-dropdown-caret { transform: rotate(180deg); }
+        .svc-dropdown-menu {
+          position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+          background: white; border: 1px solid var(--border); border-radius: 6px;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.1); z-index: 100;
+          max-height: 220px; overflow-y: auto; display: none;
         }
-        .svc-chip:hover { border-color: var(--primary); }
-        .svc-chip.on { background: white; border-color: var(--primary); color: var(--primary); font-weight: 600; }
-        .svc-chip input { cursor: pointer; accent-color: var(--primary); }
+        .svc-dropdown-menu.open { display: block; }
+        .svc-option {
+          display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+          font-size: 13px; cursor: pointer; transition: background 0.1s;
+          border-bottom: 1px solid var(--border); color: #374151;
+        }
+        .svc-option:last-child { border-bottom: none; }
+        .svc-option:hover { background: var(--bg-light); }
+        .svc-option.selected { color: var(--primary); font-weight: 500; }
+        .svc-option input[type="checkbox"] { accent-color: var(--primary); cursor: pointer; flex-shrink: 0; }
+        .svc-selected-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+        .svc-tag {
+          display: inline-flex; align-items: center; gap: 4px;
+          background: white; border: 1px solid var(--primary); color: var(--primary);
+          border-radius: 20px; padding: 3px 8px 3px 10px; font-size: 12px; font-weight: 600;
+        }
+        .svc-tag-remove {
+          cursor: pointer; font-size: 15px; line-height: 1; opacity: 0.6;
+          margin-left: 1px; display: flex; align-items: center;
+        }
+        .svc-tag-remove:hover { opacity: 1; }
 
         /* Table */
         .table-wrap { overflow-x: auto; margin-top: 4px; }
@@ -328,7 +355,16 @@ class ArtifactPromoter extends HTMLElement {
                 Specific services
               </label>
             </div>
-            <div id="svc-chips" class="services-chips"></div>
+            <div id="svc-select-wrap" class="svc-select-wrap" style="display:none;">
+              <div class="svc-dropdown-wrap">
+                <div class="svc-dropdown-trigger" id="svc-dropdown-trigger">
+                  <span id="svc-dropdown-label">Select services…</span>
+                  <span class="svc-dropdown-caret">▼</span>
+                </div>
+                <div class="svc-dropdown-menu" id="svc-dropdown-menu"></div>
+              </div>
+              <div id="svc-selected-tags" class="svc-selected-tags"></div>
+            </div>
           </div>
 
           <!-- Inline loader -->
@@ -421,14 +457,27 @@ class ArtifactPromoter extends HTMLElement {
 
     s.getElementById('filter-all').addEventListener('change', () => {
       this.serviceFilter = 'all';
-      s.getElementById('svc-chips').classList.remove('open');
+      s.getElementById('svc-select-wrap').style.display = 'none';
+      this.closeSvcDropdown();
       this.validateForm();
     });
 
     s.getElementById('filter-specific').addEventListener('change', () => {
       this.serviceFilter = 'specific';
-      s.getElementById('svc-chips').classList.add('open');
+      s.getElementById('svc-select-wrap').style.display = 'block';
       this.validateForm();
+    });
+
+    // Multi-select dropdown toggle
+    s.getElementById('svc-dropdown-trigger').addEventListener('click', () => this.toggleSvcDropdown());
+
+    // Close dropdown on outside click
+    s.addEventListener('click', e => {
+      const trigger = s.getElementById('svc-dropdown-trigger');
+      const menu = s.getElementById('svc-dropdown-menu');
+      if (trigger && !trigger.contains(e.target) && menu && !menu.contains(e.target)) {
+        this.closeSvcDropdown();
+      }
     });
 
     s.getElementById('compare-btn').addEventListener('click', () => this.loadComparison());
@@ -939,31 +988,82 @@ class ArtifactPromoter extends HTMLElement {
   }
 
   populateServiceChips() {
-    const container = this.shadowRoot.getElementById('svc-chips');
-    container.innerHTML = '';
+    const menu = this.shadowRoot.getElementById('svc-dropdown-menu');
+    menu.innerHTML = '';
     this.selectedServiceNames.clear();
+    this.renderSvcTags();
 
-    // Show enabled blueprint service names (real resource names, not CI names)
     const names = this.enabledBlueprintServices.length > 0
       ? this.enabledBlueprintServices
       : this.ciIntegrations.map(ci => ci.ciName || ci.name || ci.id).filter(Boolean);
 
     if (!names.length) {
-      container.innerHTML = '<span style="font-size:13px;color:#94a3b8;">No services found for this project.</span>';
+      menu.innerHTML = '<div style="padding:10px 12px;font-size:13px;color:#94a3b8;">No services found.</div>';
       return;
     }
 
     names.forEach(name => {
-      const label = document.createElement('label');
-      label.className = 'svc-chip';
-      label.innerHTML = `<input type="checkbox" value="${this.esc(name)}"> ${this.esc(name)}`;
-      const cb = label.querySelector('input');
-      cb.addEventListener('change', () => {
-        if (cb.checked) { this.selectedServiceNames.add(name); label.classList.add('on'); }
-        else            { this.selectedServiceNames.delete(name); label.classList.remove('on'); }
+      const opt = document.createElement('div');
+      opt.className = 'svc-option';
+      opt.dataset.name = name;
+      opt.innerHTML = `<input type="checkbox" value="${this.esc(name)}"> ${this.esc(name)}`;
+      const cb = opt.querySelector('input');
+      opt.addEventListener('click', e => {
+        if (e.target !== cb) cb.checked = !cb.checked;
+        if (cb.checked) { this.selectedServiceNames.add(name); opt.classList.add('selected'); }
+        else            { this.selectedServiceNames.delete(name); opt.classList.remove('selected'); }
+        this.updateSvcDropdownLabel();
+        this.renderSvcTags();
         this.validateForm();
       });
-      container.appendChild(label);
+      menu.appendChild(opt);
+    });
+  }
+
+  toggleSvcDropdown() {
+    const trigger = this.shadowRoot.getElementById('svc-dropdown-trigger');
+    const menu = this.shadowRoot.getElementById('svc-dropdown-menu');
+    const isOpen = menu.classList.contains('open');
+    if (isOpen) {
+      menu.classList.remove('open');
+      trigger.classList.remove('open');
+    } else {
+      menu.classList.add('open');
+      trigger.classList.add('open');
+    }
+  }
+
+  closeSvcDropdown() {
+    const trigger = this.shadowRoot.getElementById('svc-dropdown-trigger');
+    const menu = this.shadowRoot.getElementById('svc-dropdown-menu');
+    if (trigger) trigger.classList.remove('open');
+    if (menu) menu.classList.remove('open');
+  }
+
+  updateSvcDropdownLabel() {
+    const label = this.shadowRoot.getElementById('svc-dropdown-label');
+    const n = this.selectedServiceNames.size;
+    label.textContent = n === 0 ? 'Select services…' : `${n} service${n > 1 ? 's' : ''} selected`;
+    label.style.color = n === 0 ? '' : '#1a1a2e';
+  }
+
+  renderSvcTags() {
+    const container = this.shadowRoot.getElementById('svc-selected-tags');
+    container.innerHTML = '';
+    this.selectedServiceNames.forEach(name => {
+      const tag = document.createElement('span');
+      tag.className = 'svc-tag';
+      tag.innerHTML = `${this.esc(name)}<span class="svc-tag-remove" title="Remove">×</span>`;
+      tag.querySelector('.svc-tag-remove').addEventListener('click', () => {
+        this.selectedServiceNames.delete(name);
+        // uncheck the option in menu
+        const opt = this.shadowRoot.querySelector(`.svc-option[data-name="${CSS.escape(name)}"]`);
+        if (opt) { opt.querySelector('input').checked = false; opt.classList.remove('selected'); }
+        this.updateSvcDropdownLabel();
+        this.renderSvcTags();
+        this.validateForm();
+      });
+      container.appendChild(tag);
     });
   }
 
@@ -1219,8 +1319,12 @@ class ArtifactPromoter extends HTMLElement {
     const s = this.shadowRoot;
     this.ciIntegrations = [];
     this.selectedServiceNames.clear();
-    s.getElementById('svc-chips').innerHTML = '';
-    s.getElementById('svc-chips').classList.remove('open');
+    s.getElementById('svc-dropdown-menu').innerHTML = '';
+    s.getElementById('svc-selected-tags').innerHTML = '';
+    s.getElementById('svc-select-wrap').style.display = 'none';
+    this.closeSvcDropdown();
+    const label = s.getElementById('svc-dropdown-label');
+    if (label) label.textContent = 'Select services…';
     s.getElementById('filter-all').checked = true;
     this.serviceFilter = 'all';
   }
