@@ -94,7 +94,6 @@ class ArtifactPromoter extends HTMLElement {
         }
         select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
         select:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
-        .arrow-sep { color: var(--primary); font-size: 20px; padding-bottom: 4px; flex-shrink: 0; }
 
         /* Buttons */
         .btn {
@@ -121,21 +120,36 @@ class ArtifactPromoter extends HTMLElement {
         .alert-warning { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
         .alert-info   { background: #eff6ff; border: 1px solid #93c5fd; color: #1d4ed8; }
 
-        /* Flow indicator */
-        .flow-row {
-          display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-          padding: 10px 12px; background: var(--bg-light); border-radius: 6px;
-          border: 1px solid var(--border); margin-bottom: 16px;
+        /* Unified CI/CD Flow Widget */
+        .flow-widget {
+          background: var(--bg-light); border: 1px solid var(--border);
+          border-radius: 8px; padding: 16px 20px;
         }
-        .flow-label { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-right: 4px; }
-        .env-chip {
-          padding: 3px 10px; border-radius: 14px; font-size: 12px; font-weight: 500;
-          background: white; border: 1px solid var(--border); color: #475569;
-          transition: all 0.15s;
+        .flow-track {
+          display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
         }
-        .env-chip.source { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
-        .env-chip.target { background: #f0fdf4; border-color: #86efac; color: #166534; }
-        .flow-arrow { color: #cbd5e1; font-size: 12px; }
+        .flow-node {
+          padding: 7px 16px; border-radius: 6px; border: 2px solid var(--border);
+          background: white; font-size: 13px; font-weight: 500; color: #475569;
+          cursor: pointer; transition: all 0.15s; white-space: nowrap; user-select: none;
+        }
+        .flow-node:hover:not(.flow-node-end) { border-color: var(--primary); color: var(--primary); background: #eef2ff; }
+        .flow-node.source { background: var(--primary); border-color: var(--primary); color: white; }
+        .flow-node.target { background: var(--success); border-color: var(--success); color: white; }
+        .flow-node.flow-node-end { cursor: default; opacity: 0.5; }
+        .flow-connector {
+          display: flex; align-items: center; color: #cbd5e1;
+          font-size: 20px; flex-shrink: 0; line-height: 1; transition: color 0.15s;
+        }
+        .flow-connector.active { color: var(--primary); }
+        .flow-pair-info {
+          display: flex; align-items: center; gap: 6px; margin-top: 12px;
+          padding-top: 10px; border-top: 1px solid var(--border); font-size: 13px; color: #475569;
+        }
+        .pair-src { font-weight: 600; color: var(--primary); }
+        .pair-tgt { font-weight: 600; color: var(--success); }
+        .pair-arrow { color: #94a3b8; font-size: 16px; }
+        .pair-hint { font-size: 11px; color: #94a3b8; margin-left: 2px; }
 
         /* Services */
         .radio-group { display: flex; gap: 20px; margin: 8px 0; }
@@ -271,28 +285,20 @@ class ArtifactPromoter extends HTMLElement {
             </div>
           </div>
 
-          <!-- CI/CD Flow -->
-          <div id="flow-row" class="flow-row" style="display:none;">
-            <span class="flow-label">CI/CD Flow</span>
-            <div id="flow-nodes" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;"></div>
+          <!-- Unified CI/CD Flow + Env Picker -->
+          <div id="env-flow-widget" style="display:none; margin-bottom:16px;">
+            <p class="card-title" style="margin-bottom:10px;">CI/CD Promotion Flow</p>
+            <div class="flow-widget">
+              <div id="flow-nodes" class="flow-track"></div>
+              <div id="flow-pair-summary" class="flow-pair-info" style="display:none;"></div>
+            </div>
+            <p style="font-size:11px;color:#94a3b8;margin-top:8px;">
+              Click a stage to set it as <strong>source</strong> — the next stage auto-selects as <strong>target</strong>.
+            </p>
           </div>
 
-          <!-- Env selection -->
-          <div class="form-row">
-            <div class="form-group">
-              <label for="src-sel">Source Environment</label>
-              <select id="src-sel" disabled>
-                <option value="">— Select source —</option>
-              </select>
-            </div>
-            <span class="arrow-sep">→</span>
-            <div class="form-group">
-              <label for="tgt-sel">Target Environment</label>
-              <select id="tgt-sel" disabled>
-                <option value="">— Select target —</option>
-              </select>
-            </div>
-          </div>
+          <!-- Registration-type info alert (shown for non-ENVIRONMENT types) -->
+          <div id="comparison-alert" class="alert" style="display:none;"></div>
 
           <!-- Services filter -->
           <div style="margin-bottom:16px;">
@@ -390,19 +396,6 @@ class ArtifactPromoter extends HTMLElement {
     const s = this.shadowRoot;
 
     s.getElementById('project-sel').addEventListener('change', e => this.onProjectChange(e.target.value));
-
-    s.getElementById('src-sel').addEventListener('change', e => {
-      this.sourceEnv = e.target.value;
-      this.updateFlowHighlights();
-      this.updateTargetDropdown();
-      this.validateForm();
-    });
-
-    s.getElementById('tgt-sel').addEventListener('change', e => {
-      this.targetEnv = e.target.value;
-      this.updateFlowHighlights();
-      this.validateForm();
-    });
 
     s.getElementById('filter-all').addEventListener('change', () => {
       this.serviceFilter = 'all';
@@ -852,37 +845,73 @@ class ArtifactPromoter extends HTMLElement {
 
   renderFlowIndicator() {
     const s = this.shadowRoot;
-    const row = s.getElementById('flow-row');
-    const nodes = s.getElementById('flow-nodes');
+    const widget = s.getElementById('env-flow-widget');
+    const nodesEl = s.getElementById('flow-nodes');
 
-    if (!this.validEnvs.length) { row.style.display = 'none'; return; }
+    if (!this.validEnvs.length) { widget.style.display = 'none'; return; }
 
-    row.style.display = 'flex';
-    nodes.innerHTML = this.validEnvs.map((env, i) =>
-      (i > 0 ? `<span class="flow-arrow">›</span>` : '') +
-      `<span class="env-chip" data-name="${this.esc(env.name)}">${this.esc(env.name)}</span>`
-    ).join('');
-  }
+    widget.style.display = 'block';
+    nodesEl.innerHTML = this.validEnvs.map((env, i) => {
+      const isLast = i === this.validEnvs.length - 1;
+      const connector = i > 0
+        ? `<span class="flow-connector" data-index="${i}">›</span>`
+        : '';
+      const title = isLast
+        ? 'Last stage — cannot be source'
+        : `Click to promote from ${this.esc(env.name)}`;
+      return connector +
+        `<span class="flow-node${isLast ? ' flow-node-end' : ''}" data-name="${this.esc(env.name)}" title="${title}">${this.esc(env.name)}</span>`;
+    }).join('');
 
-  updateFlowHighlights() {
-    this.shadowRoot.querySelectorAll('.env-chip').forEach(chip => {
-      chip.classList.remove('source', 'target');
-      if (chip.dataset.name === this.sourceEnv) chip.classList.add('source');
-      if (chip.dataset.name === this.targetEnv) chip.classList.add('target');
+    // Wire click listeners onto non-last nodes
+    nodesEl.querySelectorAll('.flow-node:not(.flow-node-end)').forEach(node => {
+      node.addEventListener('click', () => {
+        this.sourceEnv = node.dataset.name;
+        this.updateTargetFromFlow();
+        this.validateForm();
+      });
     });
   }
 
-  populateEnvDropdowns() {
+  updateFlowHighlights() {
     const s = this.shadowRoot;
-    const opts = '<option value="">— Select —</option>' +
-      this.validEnvs.map(e => `<option value="${this.esc(e.name)}">${this.esc(e.name)}</option>`).join('');
 
-    const srcSel = s.getElementById('src-sel');
-    const tgtSel = s.getElementById('tgt-sel');
-    srcSel.innerHTML = opts;
-    tgtSel.innerHTML = opts;
-    srcSel.disabled = false;
-    tgtSel.disabled = false;
+    // Update node classes
+    s.querySelectorAll('#flow-nodes .flow-node').forEach(node => {
+      node.classList.remove('source', 'target');
+      if (node.dataset.name === this.sourceEnv) node.classList.add('source');
+      if (node.dataset.name === this.targetEnv)  node.classList.add('target');
+    });
+
+    // Highlight the connector between source and target
+    const srcIdx = this.validEnvs.findIndex(e => e.name === this.sourceEnv);
+    const tgtIdx = this.validEnvs.findIndex(e => e.name === this.targetEnv);
+    s.querySelectorAll('#flow-nodes .flow-connector').forEach(conn => {
+      const idx = parseInt(conn.dataset.index);
+      conn.classList.toggle('active', srcIdx >= 0 && tgtIdx === srcIdx + 1 && idx === tgtIdx);
+    });
+
+    // Pair summary
+    const summary = s.getElementById('flow-pair-summary');
+    if (this.sourceEnv && this.targetEnv) {
+      summary.style.display = 'flex';
+      summary.innerHTML = `
+        <span>Promoting:</span>
+        <span class="pair-src">${this.esc(this.sourceEnv)}</span>
+        <span class="pair-arrow">›</span>
+        <span class="pair-tgt">${this.esc(this.targetEnv)}</span>
+        <span class="pair-hint">(next stage in CI/CD flow)</span>
+      `;
+    } else if (this.sourceEnv) {
+      summary.style.display = 'flex';
+      summary.innerHTML = `<span style="color:var(--danger);">⚠ <strong>${this.esc(this.sourceEnv)}</strong> is the last stage — no next environment to promote to.</span>`;
+    } else {
+      summary.style.display = 'none';
+    }
+  }
+
+  populateEnvDropdowns() {
+    // Flow widget is rendered by renderFlowIndicator(); nothing extra needed here.
   }
 
   populateServiceChips() {
@@ -1038,27 +1067,13 @@ class ArtifactPromoter extends HTMLElement {
 
   // ─── State Helpers ─────────────────────────────────────────────────────────
 
-  updateTargetDropdown() {
-    const s = this.shadowRoot;
-    const tgtSel = s.getElementById('tgt-sel');
+  updateTargetFromFlow() {
     const srcEnv = this.validEnvs.find(e => e.name === this.sourceEnv);
-
     if (!srcEnv) {
-      tgtSel.innerHTML = '<option value="">— Select target —</option>';
-      tgtSel.disabled = true;
       this.targetEnv = '';
-      return;
-    }
-
-    const nextEnv = this.validEnvs.find(e => e.sequence === srcEnv.sequence + 1);
-    if (nextEnv) {
-      tgtSel.innerHTML = `<option value="${this.esc(nextEnv.name)}">${this.esc(nextEnv.name)}</option>`;
-      tgtSel.disabled = false;
-      this.targetEnv = nextEnv.name;
     } else {
-      tgtSel.innerHTML = '<option value="">No next environment in flow</option>';
-      tgtSel.disabled = true;
-      this.targetEnv = '';
+      const nextEnv = this.validEnvs.find(e => e.sequence === srcEnv.sequence + 1);
+      this.targetEnv = nextEnv ? nextEnv.name : '';
     }
     this.updateFlowHighlights();
   }
@@ -1158,11 +1173,9 @@ class ArtifactPromoter extends HTMLElement {
     this.sourceEnv = '';
     this.targetEnv = '';
     this.ciCdFlow = null;
-    s.getElementById('src-sel').innerHTML = '<option value="">— Select source —</option>';
-    s.getElementById('src-sel').disabled = true;
-    s.getElementById('tgt-sel').innerHTML = '<option value="">— Select target —</option>';
-    s.getElementById('tgt-sel').disabled = true;
-    s.getElementById('flow-row').style.display = 'none';
+    s.getElementById('env-flow-widget').style.display = 'none';
+    s.getElementById('flow-nodes').innerHTML = '';
+    s.getElementById('flow-pair-summary').style.display = 'none';
     s.getElementById('compare-btn').disabled = true;
   }
 
