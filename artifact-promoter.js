@@ -126,9 +126,9 @@ class ArtifactPromoter extends HTMLElement {
           border-radius: 8px; padding: 16px 18px;
         }
         .flow-hint {
-          font-size: 12px; color: #94a3b8; margin-bottom: 10px; line-height: 1.5;
+          font-size: 12px; color: #1a1a2e; margin-bottom: 10px; line-height: 1.5;
         }
-        .flow-hint strong { color: #64748b; font-weight: 600; }
+        .flow-hint strong { color: #1a1a2e; font-weight: 700; }
 
         /* Section dividers */
         .divider {
