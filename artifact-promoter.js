@@ -13,7 +13,7 @@ class ArtifactPromoter extends HTMLElement {
     this.validEnvs = [];        // [{sequence, name, clusterId}] sorted by sequence
     this.registrationType = 'ENVIRONMENT';
     this.ciIntegrations = [];           // [{id, name, ...}]
-    this.enabledBlueprintServices = []; // service resource names enabled in blueprint
+    this.enabledBlueprintServices = []; // all service-type resource names from blueprint
     this.sourceEnv = '';
     this.targetEnv = '';
     this.sourceClusterId = '';
@@ -21,7 +21,7 @@ class ArtifactPromoter extends HTMLElement {
     this.sourceArtifacts = {};  // applicationName → Artifact (latest)
     this.targetArtifacts = {};  // applicationName → Artifact (latest)
     this.diffs = [];            // comparison rows
-    this.noCiSvcs = [];         // enabled in blueprint but no CI integration
+    this.noCiSvcs = [];         // services without CI integration
     this.selectedDiffs = new Set();
     this.serviceFilter = 'all';
     this.selectedServiceNames = new Set();
@@ -560,8 +560,7 @@ class ArtifactPromoter extends HTMLElement {
         this.ciIntegrations = [];
       }
 
-      // Extract enabled service-type blueprint resources for the chips list.
-      // If no resourceType field is present, include the item (safer fallback).
+      // Extract all service-type blueprint resources for the chips list (enabled or disabled).
       this.enabledBlueprintServices = [];
       if (bpRes.ok) {
         const bpList = await bpRes.json();
@@ -569,7 +568,7 @@ class ArtifactPromoter extends HTMLElement {
           if (!item.resourceName) return;
           const rType = (item.resourceType || item.type || '').toLowerCase();
           if (rType && rType !== 'service') return;  // skip non-service types
-          if (item.info?.disabled !== true) this.enabledBlueprintServices.push(item.resourceName);
+          this.enabledBlueprintServices.push(item.resourceName);
         });
       }
 
@@ -640,7 +639,7 @@ class ArtifactPromoter extends HTMLElement {
       this.targetClusterId = tgtId;
 
       // ── Step 1: Fetch blueprint, CI integrations, and artifacts in parallel ───
-      this.setLoading(true, 'Checking blueprint and fetching artifacts...');
+      this.setLoading(true, 'Fetching services and artifacts...');
       const [bpRes, ciIntRes, srcRes, tgtRes] = await Promise.all([
         fetch(`/cc-ui/v1/designer/${encodeURIComponent(this.selectedProject)}/master/files`),
         fetch(`/cc-ui/v1/artifacts-ci/blueprint/${encodeURIComponent(this.selectedProject)}`),
@@ -648,9 +647,8 @@ class ArtifactPromoter extends HTMLElement {
         fetch(`/cc-ui/v1/artifacts/${tgtId}`)
       ]);
 
-      // ── Step 2: Build blueprint map — only service-type enabled resources ────
-      const blueprintDisabled = {};
-      const enabledResources = [];  // service-type resource names where disabled !== true
+      // ── Step 2: Collect all service-type blueprint resources (enabled or disabled) ──
+      const allBlueprintServices = [];
       if (bpRes.ok) {
         const bpList = await bpRes.json();
         (Array.isArray(bpList) ? bpList : (bpList.content || [])).forEach(item => {
@@ -658,9 +656,7 @@ class ArtifactPromoter extends HTMLElement {
           // Only consider service-type resources for CI/CD promotion
           const rType = (item.resourceType || item.type || '').toLowerCase();
           if (rType && rType !== 'service') return;
-          const disabled = item.info?.disabled === true;
-          blueprintDisabled[item.resourceName.toLowerCase()] = disabled;
-          if (!disabled) enabledResources.push(item.resourceName);
+          allBlueprintServices.push(item.resourceName);
         });
       }
 
@@ -703,23 +699,20 @@ class ArtifactPromoter extends HTMLElement {
       if (tgtRes.ok) this.targetArtifacts = this.buildArtifactMap(toArray(await tgtRes.json()));
 
       // ── Step 5: Determine candidates ─────────────────────────────────────────
-      // For "all": use ENABLED blueprint resources (not CI integration names).
+      // For "all": use ALL blueprint service resources (enabled or disabled at blueprint level).
       // For "specific": use user-selected names.
       const candidates = this.serviceFilter === 'specific'
         ? [...this.selectedServiceNames]
-        : enabledResources;
+        : (allBlueprintServices.length > 0
+            ? allBlueprintServices
+            : this.ciIntegrations.map(ci => ci.ciName || ci.name || ci.id).filter(Boolean));
 
-      const toShow       = [];  // enabled + has CI → diff table
-      const disabledSvcs = [];  // disabled in blueprint → warn & exclude
-      const noCiSvcs     = [];  // no CI integration → exclude (for specific filter warning)
+      const toShow   = [];  // has CI → diff table
+      const noCiSvcs = [];  // no CI integration → exclude
 
       candidates.forEach(svcName => {
         const norm = svcName.toLowerCase();
         const ci = ciMap[norm] || ciMap[norm.replace(/-/g, '_')] || ciMap[norm.replace(/_/g, '-')];
-        const isDisabled = blueprintDisabled[norm] ??
-          blueprintDisabled[norm.replace(/-/g, '_')] ??
-          blueprintDisabled[norm.replace(/_/g, '-')];
-        if (isDisabled) { disabledSvcs.push(svcName); return; }
         if (!ci) { noCiSvcs.push(svcName); return; }
         toShow.push(svcName);
       });
@@ -757,7 +750,7 @@ class ArtifactPromoter extends HTMLElement {
       }));
 
       if (toShow.length === 0 && this.noCiSvcs.length === 0) {
-        this.showError('No enabled services found. Check blueprint and CI/CD configuration.');
+        this.showError('No services found. Check blueprint resources and CI/CD configuration.');
         return;
       }
       if (toShow.length === 0) {
