@@ -678,6 +678,15 @@ class ArtifactPromoter extends HTMLElement {
         [...globalCis, ...projectCis].forEach(ci => {
           if (ci.ciName) ciMap[ci.ciName.toLowerCase()] = ci;
         });
+        // Also index by name with project prefix stripped so blueprint resourceNames match.
+        // e.g. "integrtr-3414939890-service-billing-web" → also keyed as "service-billing-web"
+        const projectPrefix = this.selectedProject.toLowerCase() + '-';
+        Object.keys(ciMap).forEach(key => {
+          if (key.startsWith(projectPrefix)) {
+            const stripped = key.slice(projectPrefix.length);
+            if (!ciMap[stripped]) ciMap[stripped] = ciMap[key];
+          }
+        });
       }
       if (!Object.keys(ciMap).length) {
         this.showError('No CI integrations found for this project. Configure CI/CD integrations first.');
