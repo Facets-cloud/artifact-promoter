@@ -9,6 +9,7 @@ class ArtifactPromoter extends HTMLElement {
     // State
     this.projects = [];
     this.selectedProject = '';
+    this.selectedProjectBranch = '';
     this.ciCdFlow = null;
     this.validEnvs = [];        // [{sequence, name, clusterId}] sorted by sequence
     this.registrationType = 'ENVIRONMENT';
@@ -514,10 +515,13 @@ class ArtifactPromoter extends HTMLElement {
     try {
       this.setLoading(true, 'Loading CI/CD flow...');
 
+      const projectData = this.projects.find(p => p.id === stackName || p.name === stackName);
+      this.selectedProjectBranch = (projectData && projectData.branch) || 'main';
+
       const [ciCdRes, ciIntRes, bpRes] = await Promise.all([
         fetch(`/cc-ui/v1/ci-cd/${encodeURIComponent(stackName)}`),
         fetch(`/cc-ui/v1/artifacts-ci/blueprint/${encodeURIComponent(stackName)}`),
-        fetch(`/cc-ui/v1/designer/${encodeURIComponent(stackName)}/master/files`)
+        fetch(`/cc-ui/v1/designer/${encodeURIComponent(stackName)}/${encodeURIComponent(this.selectedProjectBranch)}/files`)
       ]);
 
       if (!ciCdRes.ok) {
@@ -641,7 +645,7 @@ class ArtifactPromoter extends HTMLElement {
       // ── Step 1: Fetch blueprint, CI integrations, and artifacts in parallel ───
       this.setLoading(true, 'Fetching services and artifacts...');
       const [bpRes, ciIntRes, srcRes, tgtRes] = await Promise.all([
-        fetch(`/cc-ui/v1/designer/${encodeURIComponent(this.selectedProject)}/master/files`),
+        fetch(`/cc-ui/v1/designer/${encodeURIComponent(this.selectedProject)}/${encodeURIComponent(this.selectedProjectBranch)}/files`),
         fetch(`/cc-ui/v1/artifacts-ci/blueprint/${encodeURIComponent(this.selectedProject)}`),
         fetch(`/cc-ui/v1/artifacts/${srcId}`),
         fetch(`/cc-ui/v1/artifacts/${tgtId}`)
