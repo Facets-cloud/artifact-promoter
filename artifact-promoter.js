@@ -653,6 +653,8 @@ class ArtifactPromoter extends HTMLElement {
 
       // ── Step 2: Collect all service-type blueprint resources (enabled or disabled) ──
       const allBlueprintServices = [];
+      // bpCiNameMap: resourceName → info.ciName from blueprint (exact CI name override)
+      const bpCiNameMap = {};
       if (bpRes.ok) {
         const bpList = await bpRes.json();
         (Array.isArray(bpList) ? bpList : (bpList.content || [])).forEach(item => {
@@ -661,6 +663,9 @@ class ArtifactPromoter extends HTMLElement {
           const rType = (item.resourceType || item.type || '').toLowerCase();
           if (rType && rType !== 'service') return;
           allBlueprintServices.push(item.resourceName);
+          // Capture the blueprint's declared CI name if present (may differ from resourceName)
+          const bpCiName = item.info && item.info.ciName;
+          if (bpCiName) bpCiNameMap[item.resourceName.toLowerCase()] = bpCiName.toLowerCase();
         });
       }
 
@@ -725,7 +730,14 @@ class ArtifactPromoter extends HTMLElement {
 
       candidates.forEach(svcName => {
         const norm = svcName.toLowerCase();
-        const ci = ciMap[norm] || ciMap[norm.replace(/-/g, '_')] || ciMap[norm.replace(/_/g, '-')];
+        // Primary lookup by resourceName (and dash/underscore variants)
+        let ci = ciMap[norm] || ciMap[norm.replace(/-/g, '_')] || ciMap[norm.replace(/_/g, '-')];
+        // Fallback: use blueprint-declared info.ciName (handles cases where CI name differs from resourceName,
+        // e.g. resourceName="lambda-mdgen-excel-processor" but ciName="mdgen-excel-processor")
+        if (!ci && bpCiNameMap[norm]) {
+          const bpCi = bpCiNameMap[norm];
+          ci = ciMap[bpCi] || ciMap[bpCi.replace(/-/g, '_')] || ciMap[bpCi.replace(/_/g, '-')];
+        }
         if (!ci) { noCiSvcs.push(svcName); return; }
         toShow.push(svcName);
       });
