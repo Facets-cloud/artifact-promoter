@@ -738,6 +738,13 @@ class ArtifactPromoter extends HTMLElement {
           const bpCi = bpCiNameMap[norm];
           ci = ciMap[bpCi] || ciMap[bpCi.replace(/-/g, '_')] || ciMap[bpCi.replace(/_/g, '-')];
         }
+        // Suffix fallback: handles services whose name has a type prefix not present in the CI name.
+        // e.g. service='lambda-mdgen-excel-processor', CI (after project-prefix strip)='mdgen-excel-processor'
+        // → 'lambda-mdgen-excel-processor'.endsWith('-mdgen-excel-processor') === true
+        if (!ci) {
+          const suffixMatches = Object.keys(ciMap).filter(k => norm.endsWith('-' + k));
+          if (suffixMatches.length === 1) ci = ciMap[suffixMatches[0]];
+        }
         if (!ci) { noCiSvcs.push(svcName); return; }
         toShow.push(svcName);
       });
@@ -751,8 +758,9 @@ class ArtifactPromoter extends HTMLElement {
       const noCiReasons = {};
       await Promise.all(noCiSvcs.map(async svcName => {
         try {
-          // Phase 1: explicit CI name lookup
-          const ciRes = await fetch(`/cc-ui/v1/artifacts-ci/name/${encodeURIComponent(svcName)}`);
+          // Phase 1: explicit CI name lookup — use blueprint-declared CI name if available
+          const resolvedCiName = bpCiNameMap[svcName.toLowerCase()] || svcName;
+          const ciRes = await fetch(`/cc-ui/v1/artifacts-ci/name/${encodeURIComponent(resolvedCiName)}`);
           if (ciRes.ok) {
             noCiReasons[svcName] = 'Artifact not available in source environment';
             return;
