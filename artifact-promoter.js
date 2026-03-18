@@ -296,6 +296,46 @@ class ArtifactPromoter extends HTMLElement {
         .empty-state { text-align: center; padding: 40px 20px; color: #94a3b8; }
         .empty-state .icon { font-size: 36px; margin-bottom: 8px; }
         .empty-state p { font-size: 14px; }
+
+        /* Expand button and build-changes panel */
+        .expand-btn {
+          background: none; border: 1px solid var(--border); cursor: pointer;
+          color: #94a3b8; font-size: 10px; padding: 3px 6px; border-radius: 4px;
+          line-height: 1; transition: all 0.15s; display: inline-flex;
+          align-items: center; justify-content: center;
+        }
+        .expand-btn:hover { color: var(--primary); border-color: var(--primary); }
+        .expand-btn.open { color: var(--primary); border-color: var(--primary); transform: rotate(90deg); }
+        .changes-row { background: transparent !important; }
+        .changes-row:hover { background: transparent !important; }
+        .changes-row td { border-bottom: none; padding: 0 !important; }
+        .changes-panel { display: none; padding: 12px 16px 14px; background: #f8fafc; border-bottom: 1px solid var(--border); }
+        .changes-panel.open { display: block; }
+        .changes-header {
+          font-size: 11px; font-weight: 700; text-transform: uppercase;
+          letter-spacing: 0.06em; color: #475569; margin-bottom: 10px;
+        }
+        .changes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        @media (max-width: 640px) { .changes-grid { grid-template-columns: 1fr; } }
+        .build-card {
+          background: white; border: 1px solid var(--border);
+          border-radius: 6px; padding: 10px 12px;
+        }
+        .build-card-title {
+          font-size: 11px; font-weight: 700; text-transform: uppercase;
+          letter-spacing: 0.06em; margin-bottom: 8px;
+        }
+        .build-card-title.src { color: #1d4ed8; }
+        .build-card-title.tgt { color: #166534; }
+        .build-meta-row {
+          display: flex; gap: 8px; align-items: baseline;
+          font-size: 12px; margin-bottom: 5px; line-height: 1.4;
+        }
+        .build-meta-row:last-child { margin-bottom: 0; }
+        .build-label { font-weight: 600; color: #64748b; font-size: 11px; min-width: 60px; flex-shrink: 0; }
+        .build-value { color: #1a1a2e; word-break: break-all; }
+        .build-value.mono { font-family: monospace; font-size: 11px; }
+        .build-value.dim { color: #94a3b8; font-style: italic; }
       </style>
 
       <div class="container">
@@ -422,6 +462,7 @@ class ArtifactPromoter extends HTMLElement {
                     <th>Source (<span id="src-label">—</span>)</th>
                     <th>Target (<span id="tgt-label">—</span>)</th>
                     <th>Status</th>
+                    <th style="width:32px;"></th>
                   </tr>
                 </thead>
                 <tbody id="diff-tbody"></tbody>
@@ -840,6 +881,11 @@ class ArtifactPromoter extends HTMLElement {
               id: ciArts.src.artifactId,
               artifactUri: ciArts.src.artifactUri,
               applicationName: svcName,
+              createdBy: ciArts.src.createdBy,
+              creationDate: ciArts.src.createdOn,
+              buildId: ciArts.src.externalId,
+              buildDescription: ciArts.src.buildDescription,
+              metadata: ciArts.src.metadata,
             };
           }
           if (ciArts?.tgt) {
@@ -847,6 +893,11 @@ class ArtifactPromoter extends HTMLElement {
               id: ciArts.tgt.artifactId,
               artifactUri: ciArts.tgt.artifactUri,
               applicationName: svcName,
+              createdBy: ciArts.tgt.createdBy,
+              creationDate: ciArts.tgt.createdOn,
+              buildId: ciArts.tgt.externalId,
+              buildDescription: ciArts.tgt.buildDescription,
+              metadata: ciArts.tgt.metadata,
             };
           }
         } else {
@@ -1149,9 +1200,11 @@ class ArtifactPromoter extends HTMLElement {
 
     tbody.innerHTML = sorted.map(d => {
       const canPromote = (d.status === 'diff' || d.status === 'new') && d.ciId && d.srcArtifact?.id;
+      const canExpand  = (d.status === 'diff' || d.status === 'new');
       const checked = this.selectedDiffs.has(d.svcName);
       const srcTag = this.artifactLabel(d.srcArtifact);
       const tgtTag = this.artifactLabel(d.tgtArtifact);
+      const safeId = d.svcName.replace(/[^a-zA-Z0-9]/g, '-');
       const disabledTooltip = !canPromote
         ? (d.status === 'same'
             ? 'Source and target are already in sync — no promotion needed'
@@ -1163,7 +1216,7 @@ class ArtifactPromoter extends HTMLElement {
         : '';
 
       return `
-        <tr>
+        <tr class="diff-main-row">
           <td>
             <input type="checkbox" class="row-check" data-svc="${this.esc(d.svcName)}"
               ${checked ? 'checked' : ''}
@@ -1181,6 +1234,20 @@ class ArtifactPromoter extends HTMLElement {
               : `<span class="tag-na">—</span>`}
           </td>
           <td>${this.statusBadge(d.status)}</td>
+          <td>
+            ${canExpand ? `<button class="expand-btn" data-svc="${this.esc(d.svcName)}" title="Show build & commit details">▶</button>` : ''}
+          </td>
+        </tr>
+        <tr class="changes-row" id="cr-${safeId}">
+          <td colspan="6" class="changes-cell">
+            <div class="changes-panel" id="cp-${safeId}">
+              <div class="changes-header">Build &amp; Commit Details</div>
+              <div class="changes-grid">
+                ${this.buildInfoCard(d.srcArtifact, 'src', this.sourceEnv)}
+                ${this.buildInfoCard(d.tgtArtifact, 'tgt', this.targetEnv)}
+              </div>
+            </div>
+          </td>
         </tr>
       `;
     }).join('');
@@ -1193,6 +1260,19 @@ class ArtifactPromoter extends HTMLElement {
         else            this.selectedDiffs.delete(svc);
         this.updatePromoteBar();
         this.syncSelectAll();
+      });
+    });
+
+    // Wire up expand buttons
+    tbody.querySelectorAll('.expand-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const safeId = btn.dataset.svc.replace(/[^a-zA-Z0-9]/g, '-');
+        const panel = this.shadowRoot.getElementById(`cp-${safeId}`);
+        if (panel) {
+          const isOpen = panel.classList.contains('open');
+          panel.classList.toggle('open', !isOpen);
+          btn.classList.toggle('open', !isOpen);
+        }
       });
     });
 
@@ -1355,6 +1435,94 @@ class ArtifactPromoter extends HTMLElement {
   }
 
   // ─── Pure Helpers ──────────────────────────────────────────────────────────
+
+  /**
+   * Build the HTML for one side of the build/commit details panel.
+   * variant: 'src' | 'tgt'
+   */
+  buildInfoCard(artifact, variant, envName) {
+    const title = variant === 'src'
+      ? `📤 Incoming — ${this.esc(envName || 'source')}`
+      : `📦 Current — ${this.esc(envName || 'target')}`;
+
+    if (!artifact) {
+      return `
+        <div class="build-card">
+          <div class="build-card-title ${variant}">${title}</div>
+          <div class="build-meta-row"><span class="build-value dim">No artifact data</span></div>
+        </div>`;
+    }
+
+    const buildId = artifact.buildId || artifact.externalId || null;
+    const tag = artifact.artifactUri || artifact.tag || null;
+    const by = artifact.createdBy || artifact.lastModifiedBy || null;
+    const dateStr = artifact.creationDate || artifact.createdOn || artifact.lastModifiedDate || null;
+    const branch = artifact.metadata?.BRANCH_NAME || null;
+    const description = artifact.buildDescription || null;
+    const sha = this.extractCommitSha(tag, buildId);
+
+    const rows = [];
+    if (sha) {
+      rows.push(`<div class="build-meta-row"><span class="build-label">Commit</span><span class="build-value mono" title="${this.esc(sha)}">${this.esc(sha.length > 12 ? sha.slice(0, 12) + '…' : sha)}</span></div>`);
+    } else if (buildId) {
+      rows.push(`<div class="build-meta-row"><span class="build-label">Build</span><span class="build-value mono">${this.esc(buildId)}</span></div>`);
+    }
+    if (tag) {
+      rows.push(`<div class="build-meta-row"><span class="build-label">Version</span><span class="build-value mono" title="${this.esc(tag)}">${this.esc(this.shorten(tag))}</span></div>`);
+    }
+    if (by) {
+      rows.push(`<div class="build-meta-row"><span class="build-label">By</span><span class="build-value">${this.esc(by)}</span></div>`);
+    }
+    if (dateStr) {
+      rows.push(`<div class="build-meta-row"><span class="build-label">Date</span><span class="build-value">${this.esc(this.formatBuildDate(dateStr))}</span></div>`);
+    }
+    if (branch) {
+      rows.push(`<div class="build-meta-row"><span class="build-label">Branch</span><span class="build-value mono">${this.esc(branch)}</span></div>`);
+    }
+    if (description) {
+      rows.push(`<div class="build-meta-row"><span class="build-label">Note</span><span class="build-value">${this.esc(description)}</span></div>`);
+    }
+
+    return `
+      <div class="build-card">
+        <div class="build-card-title ${variant}">${title}</div>
+        ${rows.length > 0
+          ? rows.join('')
+          : '<div class="build-meta-row"><span class="build-value dim">No build metadata available</span></div>'}
+      </div>`;
+  }
+
+  /**
+   * Returns the value if it looks like a git commit SHA (7–40 hex chars),
+   * checking the buildId and the tag portion of an image URI.
+   */
+  extractCommitSha(tag, buildId) {
+    const shaRe = /^[0-9a-f]{7,40}$/i;
+    if (buildId && shaRe.test(buildId.trim())) return buildId.trim();
+    if (tag) {
+      // Check the tag segment after the last colon (e.g. repo/image:abc1234)
+      const colonParts = tag.split(':');
+      const last = colonParts[colonParts.length - 1];
+      if (shaRe.test(last)) return last;
+      // Check if the whole value is a SHA (bare SHA artifact URIs)
+      if (shaRe.test(tag.trim())) return tag.trim();
+    }
+    return null;
+  }
+
+  formatBuildDate(dateStr) {
+    if (!dateStr) return null;
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      return d.toLocaleString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: false
+      });
+    } catch (e) {
+      return dateStr;
+    }
+  }
 
   artifactLabel(artifact) {
     if (!artifact) return null;
