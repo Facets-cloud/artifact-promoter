@@ -615,11 +615,11 @@ class ArtifactPromoter extends HTMLElement {
       if (!text) return;
       navigator.clipboard.writeText(text).then(() => {
         btn.classList.add('copied');
-        btn.textContent = '✓ Copied';
-        setTimeout(() => { btn.classList.remove('copied'); btn.textContent = '⎘ Copy'; }, 1500);
+        btn.textContent = '✓';
+        setTimeout(() => { btn.classList.remove('copied'); btn.textContent = '⎘'; }, 1500);
       }).catch(() => {
-        btn.textContent = 'Error';
-        setTimeout(() => { btn.textContent = '⎘ Copy'; }, 1500);
+        btn.textContent = '!';
+        setTimeout(() => { btn.textContent = '⎘'; }, 1500);
       });
     });
   }
@@ -1571,7 +1571,7 @@ class ArtifactPromoter extends HTMLElement {
       rows.push(`<div class="build-meta-row"><span class="build-label">Build</span><span class="build-value mono">${this.esc(buildId)}</span></div>`);
     }
     if (tag) {
-      rows.push(`<div class="build-meta-row"><span class="build-label">Version</span><span class="build-value mono" style="word-break:break-all">${this.esc(tag)}<button class="copy-btn" data-copy="${this.esc(tag)}" title="Copy full image tag">⎘ Copy</button></span></div>`);
+      rows.push(`<div class="build-meta-row"><span class="build-label">Version</span><span class="build-value mono" style="word-break:break-all">${this.esc(tag)}<button class="copy-btn" data-copy="${this.esc(tag)}" title="Copy full image tag">⎘</button></span></div>`);
     }
     if (by) {
       rows.push(`<div class="build-meta-row"><span class="build-label">By</span><span class="build-value">${this.esc(by)}</span></div>`);
