@@ -1610,16 +1610,17 @@ class ArtifactPromoter extends HTMLElement {
       </div>`;
 
     const artifactUri = diff.srcArtifact?.artifactUri || '';
-    const repo = this.inferGitHubRepo(artifactUri);
-    const token = this.getAttribute('github-token') || '';
+    const githubOrg   = this.getAttribute('github-org') || '';
+    const token       = this.getAttribute('github-token') || '';
+    const repo = this.inferGitHubRepo(artifactUri, githubOrg, diff.svcName);
 
     // If we can't determine the repo, fall back to static card with a note
     if (!repo) {
       srcContainer.innerHTML = this.buildInfoCard(diff.srcArtifact, 'src', this.sourceEnv);
       srcContainer.insertAdjacentHTML('beforeend',
-        `<div class="commit-fetch-note">ℹ Cannot determine GitHub repo from artifact URI.
-         Ensure image URIs follow <code>{registry}/{org}/{repo}/…</code> and optionally
-         set the <code>github-token</code> attribute for private repos.</div>`);
+        `<div class="commit-fetch-note">ℹ Add <code>github-org="your-org"</code> attribute to
+         the component to enable commit history. Optionally also add
+         <code>github-token="ghp_…"</code> for private repos.</div>`);
       return;
     }
 
@@ -1691,31 +1692,41 @@ class ArtifactPromoter extends HTMLElement {
 
   /**
    * Infers the GitHub "org/repo" slug from a Docker image URI.
-   * Handles ECR patterns like:
-   *   {account}.dkr.ecr.{region}.amazonaws.com/{org}/{repo}/branch_name/...:{sha}
-   * and plain patterns like:
-   *   {org}/{repo}:{tag}
+   *
+   * Strategy (in order):
+   * 1. Multi-segment ECR path  →  {registry}/{org}/{repo}/…  →  org/repo
+   * 2. Single-segment ECR path →  {registry}/{repo-name}:{tag}
+   *    + githubOrg provided    →  githubOrg/repo-name
+   * 3. githubOrg + svcName    →  githubOrg/svcName  (last-resort fallback)
    */
-  inferGitHubRepo(artifactUri) {
-    if (!artifactUri) return null;
+  inferGitHubRepo(artifactUri, githubOrg, svcName) {
     try {
-      let uri = artifactUri.replace(/^https?:\/\//, '');
-      const slashIdx = uri.indexOf('/');
-      if (slashIdx === -1) return null;
-      const firstSeg = uri.slice(0, slashIdx);
-      // If the first segment contains a dot or colon it's a registry hostname — skip it
-      const path = (firstSeg.includes('.') || firstSeg.includes(':'))
-        ? uri.slice(slashIdx + 1)
-        : uri;
-      const parts = path.split('/');
-      if (parts.length < 2) return null;
-      const org  = parts[0];
-      const repo = parts[1].split(':')[0]; // strip any inline tag
-      if (!org || !repo) return null;
-      return `${org}/${repo}`;
-    } catch (_) {
-      return null;
-    }
+      if (artifactUri) {
+        let uri = artifactUri.replace(/^https?:\/\//, '');
+        const slashIdx = uri.indexOf('/');
+        if (slashIdx !== -1) {
+          const firstSeg = uri.slice(0, slashIdx);
+          // Strip registry hostname if present (contains dot or colon)
+          const path = (firstSeg.includes('.') || firstSeg.includes(':'))
+            ? uri.slice(slashIdx + 1)
+            : uri;
+          const parts = path.split('/');
+          if (parts.length >= 2) {
+            // Multi-segment: first two parts are org/repo
+            const org  = parts[0];
+            const repo = parts[1].split(':')[0];
+            if (org && repo) return `${org}/${repo}`;
+          } else if (parts.length === 1 && githubOrg) {
+            // Single-segment: use the path name as repo, org from attribute
+            const repo = parts[0].split(':')[0];
+            if (repo) return `${githubOrg}/${repo}`;
+          }
+        }
+      }
+      // Last resort: github-org + Facets service name
+      if (githubOrg && svcName) return `${githubOrg}/${svcName}`;
+    } catch (_) {}
+    return null;
   }
 
   formatBuildDate(dateStr) {
