@@ -1657,7 +1657,12 @@ class ArtifactPromoter extends HTMLElement {
           ? `<div class="commits-behind-badge">\u2193 ${behindCount} build${behindCount !== 1 ? 's' : ''} behind ${this.esc(this.sourceEnv)}</div>`
           : '';
 
-        const historyUrl = `/stacks/${encodeURIComponent(this.selectedProject)}/ci-cd`;
+        const ciSlug = diff.ciName
+          ? encodeURIComponent(diff.ciName)
+          : diff.ciId ? encodeURIComponent(diff.ciId) : null;
+        const historyUrl = ciSlug
+          ? `/stacks/${encodeURIComponent(this.selectedProject)}/ci-cd/${ciSlug}`
+          : `/stacks/${encodeURIComponent(this.selectedProject)}/ci-cd`;
         const link = `<a href="${historyUrl}" target="_blank" rel="noopener" class="artifact-history-link">View artifact history \u2197</a>`;
 
         tgtTitleEl.insertAdjacentHTML('afterend', badge + versionRow + link);
