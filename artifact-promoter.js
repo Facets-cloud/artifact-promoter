@@ -400,6 +400,14 @@ class ArtifactPromoter extends HTMLElement {
           font-family: monospace; font-size: 10px;
           background: rgba(0,0,0,0.06); padding: 1px 3px; border-radius: 2px;
         }
+
+        /* ── Artifact history link ── */
+        .artifact-history-link {
+          display: inline-block; margin-top: 8px;
+          font-size: 12px; font-weight: 500; color: var(--primary);
+          text-decoration: none;
+        }
+        .artifact-history-link:hover { text-decoration: underline; }
       </style>
 
       <div class="container">
@@ -1341,7 +1349,7 @@ class ArtifactPromoter extends HTMLElement {
         if (!isOpen && !panel.dataset.loaded) {
           panel.dataset.loaded = 'true';
           const diff = this.diffs.find(d => d.svcName === svcName);
-          if (diff) this.loadCommitDetails(diff, safeId);
+          if (diff) this.loadVersionDetails(diff, safeId);
         }
       });
     });
@@ -1581,9 +1589,97 @@ class ArtifactPromoter extends HTMLElement {
   }
 
   /**
-   * Async: fetches commit range from GitHub API (tgtSha..srcSha) and
-   * updates the expanded panel with a numbered commit list (source side)
-   * and a "N commits behind" badge (target side).
+   * Async: fetches version totals from the Facets versioning API for both
+   * source and target artifacts, then:
+   *   - Injects "Version: #N" into the source (dev) card
+   *   - Injects "Version: #N" + "N builds behind" badge + history link into
+   *     the target (staging) card
+   */
+  async loadVersionDetails(diff, safeId) {
+    const srcContainer = this.shadowRoot.getElementById(`cp-src-${safeId}`);
+    const tgtContainer = this.shadowRoot.getElementById(`cp-tgt-${safeId}`);
+    if (!srcContainer || !tgtContainer) return;
+
+    // Resolve versioningKey: prefer explicit field, fall back to constructed key
+    const toKey = (art) => {
+      if (!art) return null;
+      if (art.versioningKey) return art.versioningKey;
+      if (art.id) return `com.capillary.ops.cp.bo.Artifact${art.id}`;
+      return null;
+    };
+    const srcKey = toKey(diff.srcArtifact);
+    const tgtKey = toKey(diff.tgtArtifact);
+    if (!srcKey && !tgtKey) return;
+
+    // Show a small loading indicator below the target card title while fetching
+    const tgtCard = tgtContainer.querySelector('.build-card');
+    const tgtTitleEl = tgtCard?.querySelector('.build-card-title');
+    if (tgtTitleEl) {
+      tgtTitleEl.insertAdjacentHTML('afterend',
+        `<div class="commits-loading" id="cp-ver-loading-${safeId}"><div class="spinner"></div><span>Fetching version info\u2026</span></div>`);
+    }
+
+    try {
+      const [srcTotal, tgtTotal] = await Promise.all([
+        srcKey ? this.fetchVersionTotal(srcKey) : Promise.resolve(null),
+        tgtKey ? this.fetchVersionTotal(tgtKey) : Promise.resolve(null),
+      ]);
+
+      // Remove loading indicator
+      this.shadowRoot.getElementById(`cp-ver-loading-${safeId}`)?.remove();
+
+      // Source card: inject Version row before first meta row
+      if (srcTotal !== null) {
+        const srcCard = srcContainer.querySelector('.build-card');
+        const firstRow = srcCard?.querySelector('.build-meta-row');
+        if (firstRow) {
+          firstRow.insertAdjacentHTML('beforebegin',
+            `<div class="build-meta-row">
+               <span class="build-label">Version</span>
+               <span class="build-value"><strong>#${srcTotal}</strong></span>
+             </div>`);
+        }
+      }
+
+      // Target card: inject Version + behind badge + history link
+      if (tgtTitleEl) {
+        const behindCount = (srcTotal !== null && tgtTotal !== null && srcTotal > tgtTotal)
+          ? srcTotal - tgtTotal : null;
+
+        const versionRow = tgtTotal !== null
+          ? `<div class="build-meta-row">
+               <span class="build-label">Version</span>
+               <span class="build-value"><strong>#${tgtTotal}</strong></span>
+             </div>`
+          : '';
+
+        const badge = behindCount !== null
+          ? `<div class="commits-behind-badge">\u2193 ${behindCount} build${behindCount !== 1 ? 's' : ''} behind ${this.esc(this.sourceEnv)}</div>`
+          : '';
+
+        const historyUrl = `/stacks/${encodeURIComponent(this.selectedProject)}/ci-cd`;
+        const link = `<a href="${historyUrl}" target="_blank" rel="noopener" class="artifact-history-link">View artifact history \u2197</a>`;
+
+        tgtTitleEl.insertAdjacentHTML('afterend', badge + versionRow + link);
+      }
+
+    } catch (_) {
+      this.shadowRoot.getElementById(`cp-ver-loading-${safeId}`)?.remove();
+    }
+  }
+
+  /** Fetches the total version count for a given versioningKey. */
+  async fetchVersionTotal(versioningKey) {
+    const resp = await fetch(
+      `/cc-ui/v1/versions/${encodeURIComponent(versioningKey)}/paginated?perPage=1`
+    );
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return (typeof data.totalElements === 'number') ? data.totalElements : null;
+  }
+
+  /**
+   * @deprecated — replaced by loadVersionDetails
    */
   async loadCommitDetails(diff, safeId) {
     const srcSha = this.extractCommitSha(
