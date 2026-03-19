@@ -1672,14 +1672,20 @@ class ArtifactPromoter extends HTMLElement {
     }
   }
 
-  /** Fetches the total version count for a given versioningKey. */
+  /** Fetches the latest global sequence version number for a given versioningKey. */
   async fetchVersionTotal(versioningKey) {
     const resp = await fetch(
       `/cc-ui/v1/versions/${encodeURIComponent(versioningKey)}/paginated?perPage=1`
     );
     if (!resp.ok) return null;
     const data = await resp.json();
-    return (typeof data.totalElements === 'number') ? data.totalElements : null;
+    // Use the global monotonic sequence `version` from the latest entry — not `totalElements`.
+    // `totalElements` is a per-artifact update count; two independent artifacts can both reach
+    // the same count (e.g. 50) while having completely different content, making the diff show 0.
+    // `version` is a global sequence shared across all entities, so comparing src vs tgt gives
+    // the true build distance regardless of per-artifact history size.
+    const v = data.content?.[0]?.version;
+    return (typeof v === 'number') ? v : null;
   }
 
   /**
