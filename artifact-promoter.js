@@ -336,6 +336,70 @@ class ArtifactPromoter extends HTMLElement {
         .build-value { color: #1a1a2e; word-break: break-all; }
         .build-value.mono { font-family: monospace; font-size: 11px; }
         .build-value.dim { color: #94a3b8; font-style: italic; }
+
+        /* ── Commits-behind badge (shown on target card after GitHub fetch) ── */
+        .commits-behind-badge {
+          display: inline-flex; align-items: center; gap: 4px;
+          background: #fff7ed; color: #92400e;
+          border: 1px solid #fed7aa; border-radius: 4px;
+          padding: 3px 8px; font-size: 11px; font-weight: 600;
+          margin-bottom: 8px;
+        }
+
+        /* ── Loading row shown while fetching commits ── */
+        .commits-loading {
+          display: flex; align-items: center; gap: 8px;
+          padding: 10px 0; font-size: 12px; color: #64748b;
+        }
+
+        /* ── Commit count badge on source card ── */
+        .commit-count-badge {
+          display: inline-block; background: #eff6ff; color: #1d4ed8;
+          border: 1px solid #bfdbfe; border-radius: 4px;
+          padding: 3px 8px; font-size: 11px; font-weight: 600;
+          margin-bottom: 8px;
+        }
+
+        /* ── Commit list ── */
+        .commit-list { display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+        .commit-item {
+          display: flex; gap: 8px; align-items: flex-start;
+          padding: 6px 8px; background: #f8fafc;
+          border: 1px solid #e2e8f0; border-radius: 4px;
+        }
+        .commit-num {
+          min-width: 20px; height: 20px; border-radius: 50%;
+          background: #1d4ed8; color: white;
+          font-size: 10px; font-weight: 700;
+          display: flex; align-items: center; justify-content: center;
+          flex-shrink: 0; margin-top: 1px;
+        }
+        .commit-body { flex: 1; min-width: 0; }
+        .commit-msg {
+          font-size: 12px; font-weight: 500; color: #1a1a2e;
+          margin-bottom: 3px; word-break: break-word;
+        }
+        .commit-meta {
+          font-size: 11px; color: #64748b;
+          display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+        }
+        .commit-sha {
+          font-family: monospace; background: #f1f5f9;
+          border: 1px solid #e2e8f0; border-radius: 3px;
+          padding: 1px 4px; font-size: 10px;
+        }
+
+        /* ── Inline status notes ── */
+        .commit-fetch-note, .commit-fetch-error {
+          font-size: 11px; margin-top: 8px;
+          padding: 6px 8px; border-radius: 4px;
+        }
+        .commit-fetch-note { background: #f8fafc; color: #64748b; border: 1px solid #e2e8f0; }
+        .commit-fetch-error { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+        .commit-fetch-note code, .commit-fetch-error code {
+          font-family: monospace; font-size: 10px;
+          background: rgba(0,0,0,0.06); padding: 1px 3px; border-radius: 2px;
+        }
       </style>
 
       <div class="container">
@@ -1243,8 +1307,8 @@ class ArtifactPromoter extends HTMLElement {
             <div class="changes-panel" id="cp-${safeId}">
               <div class="changes-header">Build &amp; Commit Details</div>
               <div class="changes-grid">
-                ${this.buildInfoCard(d.srcArtifact, 'src', this.sourceEnv)}
-                ${this.buildInfoCard(d.tgtArtifact, 'tgt', this.targetEnv)}
+                <div id="cp-src-${safeId}">${this.buildInfoCard(d.srcArtifact, 'src', this.sourceEnv)}</div>
+                <div id="cp-tgt-${safeId}">${this.buildInfoCard(d.tgtArtifact, 'tgt', this.targetEnv)}</div>
               </div>
             </div>
           </td>
@@ -1266,12 +1330,18 @@ class ArtifactPromoter extends HTMLElement {
     // Wire up expand buttons
     tbody.querySelectorAll('.expand-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        const safeId = btn.dataset.svc.replace(/[^a-zA-Z0-9]/g, '-');
+        const svcName = btn.dataset.svc;
+        const safeId = svcName.replace(/[^a-zA-Z0-9]/g, '-');
         const panel = this.shadowRoot.getElementById(`cp-${safeId}`);
-        if (panel) {
-          const isOpen = panel.classList.contains('open');
-          panel.classList.toggle('open', !isOpen);
-          btn.classList.toggle('open', !isOpen);
+        if (!panel) return;
+        const isOpen = panel.classList.contains('open');
+        panel.classList.toggle('open', !isOpen);
+        btn.classList.toggle('open', !isOpen);
+        // On first open, fetch commit history from GitHub
+        if (!isOpen && !panel.dataset.loaded) {
+          panel.dataset.loaded = 'true';
+          const diff = this.diffs.find(d => d.svcName === svcName);
+          if (diff) this.loadCommitDetails(diff, safeId);
         }
       });
     });
@@ -1508,6 +1578,144 @@ class ArtifactPromoter extends HTMLElement {
       if (shaRe.test(tag.trim())) return tag.trim();
     }
     return null;
+  }
+
+  /**
+   * Async: fetches commit range from GitHub API (tgtSha..srcSha) and
+   * updates the expanded panel with a numbered commit list (source side)
+   * and a "N commits behind" badge (target side).
+   */
+  async loadCommitDetails(diff, safeId) {
+    const srcSha = this.extractCommitSha(
+      diff.srcArtifact?.artifactUri || diff.srcArtifact?.tag,
+      diff.srcArtifact?.buildId
+    );
+    const tgtSha = this.extractCommitSha(
+      diff.tgtArtifact?.artifactUri || diff.tgtArtifact?.tag,
+      diff.tgtArtifact?.buildId
+    );
+
+    // Only proceed when we have two distinct SHAs
+    if (!srcSha || !tgtSha || srcSha === tgtSha) return;
+
+    const srcContainer = this.shadowRoot.getElementById(`cp-src-${safeId}`);
+    const tgtContainer = this.shadowRoot.getElementById(`cp-tgt-${safeId}`);
+    if (!srcContainer) return;
+
+    // Show loading state in source card
+    srcContainer.innerHTML = `
+      <div class="build-card">
+        <div class="build-card-title src">📤 Incoming — ${this.esc(this.sourceEnv)}</div>
+        <div class="commits-loading"><div class="spinner"></div><span>Fetching commit history…</span></div>
+      </div>`;
+
+    const artifactUri = diff.srcArtifact?.artifactUri || '';
+    const repo = this.inferGitHubRepo(artifactUri);
+    const token = this.getAttribute('github-token') || '';
+
+    // If we can't determine the repo, fall back to static card with a note
+    if (!repo) {
+      srcContainer.innerHTML = this.buildInfoCard(diff.srcArtifact, 'src', this.sourceEnv);
+      srcContainer.insertAdjacentHTML('beforeend',
+        `<div class="commit-fetch-note">ℹ Cannot determine GitHub repo from artifact URI.
+         Ensure image URIs follow <code>{registry}/{org}/{repo}/…</code> and optionally
+         set the <code>github-token</code> attribute for private repos.</div>`);
+      return;
+    }
+
+    try {
+      const headers = { Accept: 'application/vnd.github.v3+json' };
+      if (token) headers['Authorization'] = `token ${token}`;
+
+      const resp = await fetch(
+        `https://api.github.com/repos/${repo}/compare/${tgtSha}...${srcSha}`,
+        { headers }
+      );
+      if (!resp.ok) throw new Error(`GitHub API returned ${resp.status}`);
+
+      const data = await resp.json();
+      // commits are returned oldest→newest in the compare API, we want oldest first
+      const commits = [...(data.commits || [])];
+      const count = commits.length;
+
+      // ── Update source card: numbered commit list ──────────────────────
+      srcContainer.innerHTML = `
+        <div class="build-card">
+          <div class="build-card-title src">📤 Incoming — ${this.esc(this.sourceEnv)}</div>
+          <div class="commit-count-badge">${count} commit${count !== 1 ? 's' : ''} to be promoted</div>
+          <div class="commit-list">
+            ${commits.map((c, i) => {
+              const msg  = (c.commit.message || '').split('\n')[0];
+              const who  = c.commit.author?.email || c.commit.author?.name
+                         || c.author?.login || 'Unknown';
+              const when = this.formatBuildDate(
+                c.commit.author?.date || c.commit.committer?.date
+              );
+              const sha  = c.sha.slice(0, 8);
+              return `
+                <div class="commit-item">
+                  <div class="commit-num">${i + 1}</div>
+                  <div class="commit-body">
+                    <div class="commit-msg">${this.esc(msg)}</div>
+                    <div class="commit-meta">
+                      <span class="commit-sha">${this.esc(sha)}</span>
+                      <span>·</span>
+                      <span>${this.esc(who)}</span>
+                      <span>·</span>
+                      <span>${this.esc(when || '')}</span>
+                    </div>
+                  </div>
+                </div>`;
+            }).join('')}
+          </div>
+        </div>`;
+
+      // ── Update target card: inject "N commits behind" badge ───────────
+      if (tgtContainer && count > 0) {
+        const card = tgtContainer.querySelector('.build-card');
+        if (card) {
+          const titleEl = card.querySelector('.build-card-title');
+          if (titleEl) {
+            titleEl.insertAdjacentHTML('afterend',
+              `<div class="commits-behind-badge">⬇ ${count} commit${count !== 1 ? 's' : ''} behind ${this.esc(this.sourceEnv)}</div>`);
+          }
+        }
+      }
+
+    } catch (err) {
+      srcContainer.innerHTML = this.buildInfoCard(diff.srcArtifact, 'src', this.sourceEnv);
+      srcContainer.insertAdjacentHTML('beforeend',
+        `<div class="commit-fetch-error">⚠ Could not fetch commits: ${this.esc(err.message)}</div>`);
+    }
+  }
+
+  /**
+   * Infers the GitHub "org/repo" slug from a Docker image URI.
+   * Handles ECR patterns like:
+   *   {account}.dkr.ecr.{region}.amazonaws.com/{org}/{repo}/branch_name/...:{sha}
+   * and plain patterns like:
+   *   {org}/{repo}:{tag}
+   */
+  inferGitHubRepo(artifactUri) {
+    if (!artifactUri) return null;
+    try {
+      let uri = artifactUri.replace(/^https?:\/\//, '');
+      const slashIdx = uri.indexOf('/');
+      if (slashIdx === -1) return null;
+      const firstSeg = uri.slice(0, slashIdx);
+      // If the first segment contains a dot or colon it's a registry hostname — skip it
+      const path = (firstSeg.includes('.') || firstSeg.includes(':'))
+        ? uri.slice(slashIdx + 1)
+        : uri;
+      const parts = path.split('/');
+      if (parts.length < 2) return null;
+      const org  = parts[0];
+      const repo = parts[1].split(':')[0]; // strip any inline tag
+      if (!org || !repo) return null;
+      return `${org}/${repo}`;
+    } catch (_) {
+      return null;
+    }
   }
 
   formatBuildDate(dateStr) {
