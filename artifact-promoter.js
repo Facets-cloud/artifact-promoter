@@ -1657,9 +1657,8 @@ class ArtifactPromoter extends HTMLElement {
           ? `<div class="commits-behind-badge">\u2193 ${behindCount} build${behindCount !== 1 ? 's' : ''} behind ${this.esc(this.sourceEnv)}</div>`
           : '';
 
-        // URL pattern: /v2/projects/{project}-{tenantId}?ref={origin}/capc/artifact-ci-details/{ciId}
-        const tenantId = window.location.host.split('.')[0];
-        const projectSlug = `${encodeURIComponent(this.selectedProject)}-${tenantId}`;
+        // URL pattern: /v2/projects/{project}?ref={origin}/capc/artifact-ci-details/{ciId}
+        const projectSlug = encodeURIComponent(this.selectedProject);
         const historyUrl = diff.ciId
           ? `/v2/projects/${projectSlug}?ref=${encodeURIComponent(window.location.origin + '/capc/artifact-ci-details/' + diff.ciId)}`
           : `/v2/projects/${projectSlug}`;
