@@ -1541,7 +1541,7 @@ class ArtifactPromoter extends HTMLElement {
 
     const rows = [];
     if (sha) {
-      rows.push(`<div class="build-meta-row"><span class="build-label">Commit</span><span class="build-value mono" title="${this.esc(sha)}">${this.esc(sha.length > 12 ? sha.slice(0, 12) + '…' : sha)}</span></div>`);
+      rows.push(`<div class="build-meta-row"><span class="build-label">Commit</span><span class="build-value mono">${this.esc(sha)}</span></div>`);
     } else if (buildId) {
       rows.push(`<div class="build-meta-row"><span class="build-label">Build</span><span class="build-value mono">${this.esc(buildId)}</span></div>`);
     }
