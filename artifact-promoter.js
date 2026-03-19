@@ -337,13 +337,14 @@ class ArtifactPromoter extends HTMLElement {
         .build-value.mono { font-family: monospace; font-size: 11px; }
         .build-value.dim { color: #94a3b8; font-style: italic; }
         .copy-btn {
-          display: inline-flex; align-items: center; gap: 3px;
-          background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 3px;
-          padding: 1px 6px; font-size: 10px; color: #64748b; cursor: pointer;
+          display: inline-flex; align-items: center; justify-content: center;
+          background: #fff; border: 1px solid #94a3b8; border-radius: 4px;
+          padding: 3px 5px; color: #475569; cursor: pointer;
           margin-left: 6px; vertical-align: middle; white-space: nowrap;
-          transition: background 0.15s; line-height: 1.6; font-family: inherit;
+          transition: background 0.15s, border-color 0.15s, color 0.15s;
+          line-height: 1; font-size: 12px; font-family: inherit;
         }
-        .copy-btn:hover { background: #e2e8f0; color: #334155; }
+        .copy-btn:hover { background: #f1f5f9; border-color: #64748b; color: #1e293b; }
         .copy-btn.copied { background: #dcfce7; border-color: #86efac; color: #166534; }
 
         /* ── Commits-behind badge (shown on target card after GitHub fetch) ── */
@@ -613,13 +614,15 @@ class ArtifactPromoter extends HTMLElement {
       if (!btn) return;
       const text = btn.dataset.copy;
       if (!text) return;
+      const svgClipboard = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>`;
+      const svgCheck = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
       navigator.clipboard.writeText(text).then(() => {
         btn.classList.add('copied');
-        btn.textContent = '✓';
-        setTimeout(() => { btn.classList.remove('copied'); btn.textContent = '⎘'; }, 1500);
+        btn.innerHTML = svgCheck;
+        setTimeout(() => { btn.classList.remove('copied'); btn.innerHTML = svgClipboard; }, 1500);
       }).catch(() => {
         btn.textContent = '!';
-        setTimeout(() => { btn.textContent = '⎘'; }, 1500);
+        setTimeout(() => { btn.innerHTML = svgClipboard; }, 1500);
       });
     });
   }
@@ -1571,7 +1574,8 @@ class ArtifactPromoter extends HTMLElement {
       rows.push(`<div class="build-meta-row"><span class="build-label">Build</span><span class="build-value mono">${this.esc(buildId)}</span></div>`);
     }
     if (tag) {
-      rows.push(`<div class="build-meta-row"><span class="build-label">Version</span><span class="build-value mono" style="word-break:break-all">${this.esc(tag)}<button class="copy-btn" data-copy="${this.esc(tag)}" title="Copy full image tag">⎘</button></span></div>`);
+      const clipboardSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>`;
+      rows.push(`<div class="build-meta-row"><span class="build-label">Version</span><span class="build-value mono" style="word-break:break-all">${this.esc(tag)}<button class="copy-btn" data-copy="${this.esc(tag)}" title="Copy full image tag">${clipboardSvg}</button></span></div>`);
     }
     if (by) {
       rows.push(`<div class="build-meta-row"><span class="build-label">By</span><span class="build-value">${this.esc(by)}</span></div>`);
