@@ -1754,16 +1754,12 @@ class ArtifactPromoter extends HTMLElement {
       const entries = data.content || [];
       if (!entries.length) return null;
 
-      // DEBUG: log first entry structure to console so we can see available fields
-      if (page === 0 && totalChecked === 0) {
-        console.log('[artifact-promoter] version entry sample:', JSON.stringify(entries[0]));
-      }
-
       for (let i = 0; i < entries.length; i++) {
         const e = entries[i];
-        // Try every field that might carry the artifact URI / commit SHA
-        const uri = e.artifactUri || e.tag || e.uri || e.value || '';
-        const bId = e.buildId || e.externalId || '';
+        // artifactUri lives inside the nested `entity` snapshot
+        const entity = e.entity || e;
+        const uri = entity.artifactUri || entity.tag || '';
+        const bId = entity.buildId || entity.externalId || '';
         const sha = this.extractCommitSha(uri, bId);
         if (sha && sha.toLowerCase() === normalised) {
           return totalChecked + i; // entries before this index are all newer
