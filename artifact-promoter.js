@@ -189,9 +189,21 @@ class ArtifactPromoter extends HTMLElement {
           position: absolute; top: calc(100% + 4px); left: 0; right: 0;
           background: white; border: 1px solid var(--border); border-radius: 6px;
           box-shadow: 0 4px 16px rgba(0,0,0,0.1); z-index: 100;
-          max-height: 220px; overflow-y: auto; display: none;
+          max-height: 260px; overflow: hidden; display: none; flex-direction: column;
         }
-        .svc-dropdown-menu.open { display: block; }
+        .svc-dropdown-menu.open { display: flex; }
+        .svc-search-wrap {
+          padding: 8px; border-bottom: 1px solid var(--border);
+          background: white; flex-shrink: 0;
+        }
+        .svc-search-input {
+          width: 100%; box-sizing: border-box; border: 1px solid var(--border);
+          border-radius: 4px; padding: 6px 10px; font-size: 13px; outline: none;
+          color: #374151; transition: border-color 0.15s;
+        }
+        .svc-search-input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(79,70,229,0.1); }
+        .svc-options-list { overflow-y: auto; flex: 1; }
+        .svc-no-match { padding: 10px 12px; font-size: 13px; color: #94a3b8; }
         .svc-option {
           display: flex; align-items: center; gap: 8px; padding: 8px 12px;
           font-size: 13px; cursor: pointer; transition: background 0.1s;
@@ -1178,6 +1190,24 @@ class ArtifactPromoter extends HTMLElement {
       return;
     }
 
+    // Search input (sticky at top)
+    const searchWrap = document.createElement('div');
+    searchWrap.className = 'svc-search-wrap';
+    searchWrap.innerHTML = '<input class="svc-search-input" id="svc-search-input" type="text" placeholder="Search services…" autocomplete="off">';
+    searchWrap.addEventListener('click', e => e.stopPropagation()); // prevent closing dropdown
+    menu.appendChild(searchWrap);
+
+    // Scrollable options list
+    const optionsList = document.createElement('div');
+    optionsList.className = 'svc-options-list';
+    menu.appendChild(optionsList);
+
+    const noMatch = document.createElement('div');
+    noMatch.className = 'svc-no-match';
+    noMatch.textContent = 'No matching services.';
+    noMatch.style.display = 'none';
+    optionsList.appendChild(noMatch);
+
     names.forEach(name => {
       const opt = document.createElement('div');
       opt.className = 'svc-option';
@@ -1192,7 +1222,19 @@ class ArtifactPromoter extends HTMLElement {
         this.renderSvcTags();
         this.validateForm();
       });
-      menu.appendChild(opt);
+      optionsList.appendChild(opt);
+    });
+
+    // Filter logic
+    searchWrap.querySelector('#svc-search-input').addEventListener('input', e => {
+      const q = e.target.value.trim().toLowerCase();
+      let visibleCount = 0;
+      optionsList.querySelectorAll('.svc-option').forEach(opt => {
+        const matches = !q || opt.dataset.name.toLowerCase().includes(q);
+        opt.style.display = matches ? '' : 'none';
+        if (matches) visibleCount++;
+      });
+      noMatch.style.display = visibleCount === 0 ? 'block' : 'none';
     });
   }
 
@@ -1206,6 +1248,9 @@ class ArtifactPromoter extends HTMLElement {
     } else {
       menu.classList.add('open');
       trigger.classList.add('open');
+      // Auto-focus the search input when opening
+      const searchInput = menu.querySelector('#svc-search-input');
+      if (searchInput) setTimeout(() => searchInput.focus(), 0);
     }
   }
 
@@ -1213,7 +1258,17 @@ class ArtifactPromoter extends HTMLElement {
     const trigger = this.shadowRoot.getElementById('svc-dropdown-trigger');
     const menu = this.shadowRoot.getElementById('svc-dropdown-menu');
     if (trigger) trigger.classList.remove('open');
-    if (menu) menu.classList.remove('open');
+    if (menu) {
+      menu.classList.remove('open');
+      // Clear search and show all options
+      const searchInput = menu.querySelector('#svc-search-input');
+      if (searchInput) {
+        searchInput.value = '';
+        menu.querySelectorAll('.svc-option').forEach(opt => opt.style.display = '');
+        const noMatch = menu.querySelector('.svc-no-match');
+        if (noMatch) noMatch.style.display = 'none';
+      }
+    }
   }
 
   updateSvcDropdownLabel() {
