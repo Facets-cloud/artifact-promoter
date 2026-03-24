@@ -1626,11 +1626,11 @@ class ArtifactPromoter extends HTMLElement {
   }
 
   /**
-   * Async: fetches version totals from the Facets versioning API for both
-   * source and target artifacts, then:
-   *   - Injects "Version: #N" into the source (dev) card
-   *   - Injects "Version: #N" + "N builds behind" badge + history link into
-   *     the target (staging) card
+   * Async: fetches version details and computes how many commits the target is behind the source.
+   * Strategy:
+   *   1. Extract target commit SHA and look for it in the source artifact's version history.
+   *      Count how many newer entries exist → "N commits behind".
+   *   2. If the commit is not found in source history → show "Commit not found in source history".
    */
   async loadVersionDetails(diff, safeId) {
     const srcContainer = this.shadowRoot.getElementById(`cp-src-${safeId}`);
@@ -1678,20 +1678,28 @@ class ArtifactPromoter extends HTMLElement {
         }
       }
 
-      // Target card: inject Version + behind badge + history link
+      // Target card: inject Version + commits-behind badge + history link
       if (tgtTitleEl) {
-        const behindCount = (srcTotal !== null && tgtTotal !== null && srcTotal > tgtTotal)
-          ? srcTotal - tgtTotal : null;
+        const tgtSha = this.extractCommitSha(
+          diff.tgtArtifact?.artifactUri || diff.tgtArtifact?.tag,
+          diff.tgtArtifact?.buildId
+        );
+
+        let badge = '';
+        if (tgtSha && srcKey) {
+          const commitsBehind = await this.fetchCommitsBehind(srcKey, tgtSha);
+          if (commitsBehind === null) {
+            badge = `<div class="commits-behind-badge" style="background:#fef2f2;color:#991b1b;border-color:#fecaca;">⚠ Commit not found in source history</div>`;
+          } else if (commitsBehind > 0) {
+            badge = `<div class="commits-behind-badge">\u2193 ${commitsBehind} commit${commitsBehind !== 1 ? 's' : ''} behind ${this.esc(this.sourceEnv)}</div>`;
+          }
+}
 
         const versionRow = tgtTotal !== null
           ? `<div class="build-meta-row">
                <span class="build-label">Version</span>
                <span class="build-value"><strong>#${tgtTotal}</strong></span>
              </div>`
-          : '';
-
-        const badge = behindCount !== null
-          ? `<div class="commits-behind-badge">\u2193 ${behindCount} build${behindCount !== 1 ? 's' : ''} behind ${this.esc(this.sourceEnv)}</div>`
           : '';
 
         // URL pattern: /v2/projects/{project}?ref={origin}/capc/artifact-ci-details/{ciId}
@@ -1723,6 +1731,46 @@ class ArtifactPromoter extends HTMLElement {
     // the true build distance regardless of per-artifact history size.
     const v = data.content?.[0]?.version;
     return (typeof v === 'number') ? v : null;
+  }
+
+  /**
+   * Searches the source artifact's version history for the target commit SHA.
+   * Returns how many newer entries precede the matching entry (= commits behind).
+   * Returns null if the commit SHA is not found in the history.
+   */
+  async fetchCommitsBehind(srcKey, tgtSha) {
+    const normalised = tgtSha.toLowerCase();
+    let page = 0;
+    const pageSize = 50;
+    let totalChecked = 0;
+    const maxEntries = 300; // safety cap
+
+    while (totalChecked < maxEntries) {
+      const resp = await fetch(
+        `/cc-ui/v1/versions/${encodeURIComponent(srcKey)}/paginated?perPage=${pageSize}&page=${page}`
+      );
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      const entries = data.content || [];
+      if (!entries.length) return null;
+
+      for (let i = 0; i < entries.length; i++) {
+        const e = entries[i];
+        // Try every field that might carry the artifact URI / commit SHA
+        const uri = e.artifactUri || e.tag || e.uri || e.value || '';
+        const bId = e.buildId || e.externalId || '';
+        const sha = this.extractCommitSha(uri, bId);
+        if (sha && sha.toLowerCase() === normalised) {
+          return totalChecked + i; // entries before this index are all newer
+        }
+      }
+
+      totalChecked += entries.length;
+      if (entries.length < pageSize || data.last === true || data.hasNext === false) break;
+      page++;
+    }
+
+    return null; // target SHA not found in source history
   }
 
   /**
