@@ -175,34 +175,23 @@ class ArtifactPromoter extends HTMLElement {
         /* Multi-select dropdown */
         .svc-select-wrap { margin-top: 10px; }
         .svc-dropdown-wrap { position: relative; }
-        .svc-dropdown-trigger {
-          display: flex; justify-content: space-between; align-items: center;
+        .svc-search-trigger {
+          width: 100%; box-sizing: border-box;
           border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
-          font-size: 13px; background: white; cursor: pointer; user-select: none;
-          min-height: 38px; transition: border-color 0.15s; color: #94a3b8;
+          font-size: 13px; background: white; outline: none;
+          min-height: 38px; transition: border-color 0.15s; color: #374151;
+          font-family: inherit;
         }
-        .svc-dropdown-trigger:hover { border-color: var(--primary); }
-        .svc-dropdown-trigger.open { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.1); color: #1a1a2e; }
-        .svc-dropdown-caret { font-size: 11px; color: #94a3b8; transition: transform 0.15s; flex-shrink: 0; }
-        .svc-dropdown-trigger.open .svc-dropdown-caret { transform: rotate(180deg); }
+        .svc-search-trigger::placeholder { color: #94a3b8; }
+        .svc-search-trigger:hover { border-color: var(--primary); }
+        .svc-search-trigger:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
         .svc-dropdown-menu {
           position: absolute; top: calc(100% + 4px); left: 0; right: 0;
           background: white; border: 1px solid var(--border); border-radius: 6px;
           box-shadow: 0 4px 16px rgba(0,0,0,0.1); z-index: 100;
-          max-height: 260px; overflow: hidden; display: none; flex-direction: column;
+          max-height: 220px; overflow-y: auto; display: none;
         }
-        .svc-dropdown-menu.open { display: flex; }
-        .svc-search-wrap {
-          padding: 8px; border-bottom: 1px solid var(--border);
-          background: white; flex-shrink: 0;
-        }
-        .svc-search-input {
-          width: 100%; box-sizing: border-box; border: 1px solid var(--border);
-          border-radius: 4px; padding: 6px 10px; font-size: 13px; outline: none;
-          color: #374151; transition: border-color 0.15s;
-        }
-        .svc-search-input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(79,70,229,0.1); }
-        .svc-options-list { overflow-y: auto; flex: 1; }
+        .svc-dropdown-menu.open { display: block; }
         .svc-no-match { padding: 10px 12px; font-size: 13px; color: #94a3b8; }
         .svc-option {
           display: flex; align-items: center; gap: 8px; padding: 8px 12px;
@@ -492,10 +481,7 @@ class ArtifactPromoter extends HTMLElement {
             </div>
             <div id="svc-select-wrap" class="svc-select-wrap" style="display:none;">
               <div class="svc-dropdown-wrap">
-                <div class="svc-dropdown-trigger" id="svc-dropdown-trigger">
-                  <span id="svc-dropdown-label">Select services…</span>
-                  <span class="svc-dropdown-caret">▼</span>
-                </div>
+                <input type="text" class="svc-search-trigger" id="svc-search-trigger" placeholder="Search services…" autocomplete="off">
                 <div class="svc-dropdown-menu" id="svc-dropdown-menu"></div>
               </div>
               <div id="svc-selected-tags" class="svc-selected-tags"></div>
@@ -604,14 +590,16 @@ class ArtifactPromoter extends HTMLElement {
       this.validateForm();
     });
 
-    // Multi-select dropdown toggle
-    s.getElementById('svc-dropdown-trigger').addEventListener('click', () => this.toggleSvcDropdown());
+    // Single search input opens and filters the dropdown
+    const svcInput = s.getElementById('svc-search-trigger');
+    svcInput.addEventListener('focus', () => this.openSvcDropdown());
+    svcInput.addEventListener('input', e => this.filterSvcOptions(e.target.value));
 
     // Close dropdown on outside click
     s.addEventListener('click', e => {
-      const trigger = s.getElementById('svc-dropdown-trigger');
+      const input = s.getElementById('svc-search-trigger');
       const menu = s.getElementById('svc-dropdown-menu');
-      if (trigger && !trigger.contains(e.target) && menu && !menu.contains(e.target)) {
+      if (input && !input.contains(e.target) && menu && !menu.contains(e.target)) {
         this.closeSvcDropdown();
       }
     });
@@ -1186,27 +1174,15 @@ class ArtifactPromoter extends HTMLElement {
       : this.ciIntegrations.map(ci => ci.ciName || ci.name || ci.id).filter(Boolean);
 
     if (!names.length) {
-      menu.innerHTML = '<div style="padding:10px 12px;font-size:13px;color:#94a3b8;">No services found.</div>';
+      menu.innerHTML = '<div class="svc-no-match">No services found.</div>';
       return;
     }
-
-    // Search input (sticky at top)
-    const searchWrap = document.createElement('div');
-    searchWrap.className = 'svc-search-wrap';
-    searchWrap.innerHTML = '<input class="svc-search-input" id="svc-search-input" type="text" placeholder="Search services…" autocomplete="off">';
-    searchWrap.addEventListener('click', e => e.stopPropagation()); // prevent closing dropdown
-    menu.appendChild(searchWrap);
-
-    // Scrollable options list
-    const optionsList = document.createElement('div');
-    optionsList.className = 'svc-options-list';
-    menu.appendChild(optionsList);
 
     const noMatch = document.createElement('div');
     noMatch.className = 'svc-no-match';
     noMatch.textContent = 'No matching services.';
     noMatch.style.display = 'none';
-    optionsList.appendChild(noMatch);
+    menu.appendChild(noMatch);
 
     names.forEach(name => {
       const opt = document.createElement('div');
@@ -1218,64 +1194,44 @@ class ArtifactPromoter extends HTMLElement {
         if (e.target !== cb) cb.checked = !cb.checked;
         if (cb.checked) { this.selectedServiceNames.add(name); opt.classList.add('selected'); }
         else            { this.selectedServiceNames.delete(name); opt.classList.remove('selected'); }
-        this.updateSvcDropdownLabel();
         this.renderSvcTags();
         this.validateForm();
       });
-      optionsList.appendChild(opt);
-    });
-
-    // Filter logic
-    searchWrap.querySelector('#svc-search-input').addEventListener('input', e => {
-      const q = e.target.value.trim().toLowerCase();
-      let visibleCount = 0;
-      optionsList.querySelectorAll('.svc-option').forEach(opt => {
-        const matches = !q || opt.dataset.name.toLowerCase().includes(q);
-        opt.style.display = matches ? '' : 'none';
-        if (matches) visibleCount++;
-      });
-      noMatch.style.display = visibleCount === 0 ? 'block' : 'none';
+      menu.appendChild(opt);
     });
   }
 
-  toggleSvcDropdown() {
-    const trigger = this.shadowRoot.getElementById('svc-dropdown-trigger');
+  openSvcDropdown() {
     const menu = this.shadowRoot.getElementById('svc-dropdown-menu');
-    const isOpen = menu.classList.contains('open');
-    if (isOpen) {
-      menu.classList.remove('open');
-      trigger.classList.remove('open');
-    } else {
-      menu.classList.add('open');
-      trigger.classList.add('open');
-      // Auto-focus the search input when opening
-      const searchInput = menu.querySelector('#svc-search-input');
-      if (searchInput) setTimeout(() => searchInput.focus(), 0);
-    }
+    if (menu) menu.classList.add('open');
+  }
+
+  filterSvcOptions(query) {
+    const menu = this.shadowRoot.getElementById('svc-dropdown-menu');
+    if (!menu) return;
+    this.openSvcDropdown();
+    const q = query.trim().toLowerCase();
+    let visibleCount = 0;
+    menu.querySelectorAll('.svc-option').forEach(opt => {
+      const matches = !q || opt.dataset.name.toLowerCase().includes(q);
+      opt.style.display = matches ? '' : 'none';
+      if (matches) visibleCount++;
+    });
+    const noMatch = menu.querySelector('.svc-no-match');
+    if (noMatch) noMatch.style.display = visibleCount === 0 ? 'block' : 'none';
   }
 
   closeSvcDropdown() {
-    const trigger = this.shadowRoot.getElementById('svc-dropdown-trigger');
     const menu = this.shadowRoot.getElementById('svc-dropdown-menu');
-    if (trigger) trigger.classList.remove('open');
     if (menu) {
       menu.classList.remove('open');
-      // Clear search and show all options
-      const searchInput = menu.querySelector('#svc-search-input');
-      if (searchInput) {
-        searchInput.value = '';
-        menu.querySelectorAll('.svc-option').forEach(opt => opt.style.display = '');
-        const noMatch = menu.querySelector('.svc-no-match');
-        if (noMatch) noMatch.style.display = 'none';
-      }
+      // Clear search filter and show all options
+      menu.querySelectorAll('.svc-option').forEach(opt => opt.style.display = '');
+      const noMatch = menu.querySelector('.svc-no-match');
+      if (noMatch) noMatch.style.display = 'none';
     }
-  }
-
-  updateSvcDropdownLabel() {
-    const label = this.shadowRoot.getElementById('svc-dropdown-label');
-    const n = this.selectedServiceNames.size;
-    label.textContent = n === 0 ? 'Select services…' : `${n} service${n > 1 ? 's' : ''} selected`;
-    label.style.color = n === 0 ? '' : '#1a1a2e';
+    const input = this.shadowRoot.getElementById('svc-search-trigger');
+    if (input) input.value = '';
   }
 
   renderSvcTags() {
@@ -1290,7 +1246,6 @@ class ArtifactPromoter extends HTMLElement {
         // uncheck the option in menu
         const opt = this.shadowRoot.querySelector(`.svc-option[data-name="${CSS.escape(name)}"]`);
         if (opt) { opt.querySelector('input').checked = false; opt.classList.remove('selected'); }
-        this.updateSvcDropdownLabel();
         this.renderSvcTags();
         this.validateForm();
       });
@@ -1589,8 +1544,6 @@ class ArtifactPromoter extends HTMLElement {
     s.getElementById('svc-selected-tags').innerHTML = '';
     s.getElementById('svc-select-wrap').style.display = 'none';
     this.closeSvcDropdown();
-    const label = s.getElementById('svc-dropdown-label');
-    if (label) label.textContent = 'Select services…';
     s.getElementById('filter-all').checked = true;
     this.serviceFilter = 'all';
   }
