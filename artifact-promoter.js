@@ -313,8 +313,8 @@ class ArtifactPromoter extends HTMLElement {
         .expand-btn.open img { opacity: 1; filter: invert(31%) sepia(98%) saturate(1234%) hue-rotate(228deg) brightness(97%) contrast(93%); }
         .expand-btn::after {
           content: 'Compare changes';
-          position: absolute; bottom: calc(100% + 6px); left: 50%;
-          transform: translateX(-50%);
+          position: absolute; bottom: calc(100% + 6px); right: 0;
+          transform: none;
           background: #1a1a2e; color: #fff; font-size: 12px; font-weight: 500;
           padding: 4px 8px; border-radius: 4px; white-space: nowrap;
           pointer-events: none; opacity: 0; transition: opacity 0s;
