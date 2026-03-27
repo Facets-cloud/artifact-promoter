@@ -1348,7 +1348,7 @@ class ArtifactPromoter extends HTMLElement {
           </td>
           <td>${this.statusBadge(d.status)}</td>
           <td>
-            ${canExpand ? `<button class="expand-btn" data-svc="${this.esc(d.svcName)}" title="Show build & commit details"><img src="https://static.thenounproject.com/png/4636559-200.png" alt="diff" /></button>` : ''}
+            ${canExpand ? `<button class="expand-btn" data-svc="${this.esc(d.svcName)}" title="Compare changes"><img src="https://static.thenounproject.com/png/4636559-200.png" alt="diff" /></button>` : ''}
           </td>
         </tr>
         <tr class="changes-row" id="cr-${safeId}">
