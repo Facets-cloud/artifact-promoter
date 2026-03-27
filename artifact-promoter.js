@@ -304,12 +304,22 @@ class ArtifactPromoter extends HTMLElement {
           padding: 4px 6px; border-radius: 4px;
           line-height: 1; transition: all 0.15s; display: inline-flex;
           align-items: center; justify-content: center;
+          position: relative;
         }
         .expand-btn img { width: 18px; height: 18px; opacity: 0.45; transition: opacity 0.15s, filter 0.15s; }
         .expand-btn:hover { border-color: var(--primary); }
         .expand-btn:hover img { opacity: 1; filter: invert(31%) sepia(98%) saturate(1234%) hue-rotate(228deg) brightness(97%) contrast(93%); }
         .expand-btn.open { border-color: var(--primary); }
         .expand-btn.open img { opacity: 1; filter: invert(31%) sepia(98%) saturate(1234%) hue-rotate(228deg) brightness(97%) contrast(93%); }
+        .expand-btn::after {
+          content: 'Compare changes';
+          position: absolute; bottom: calc(100% + 6px); left: 50%;
+          transform: translateX(-50%);
+          background: #1a1a2e; color: #fff; font-size: 12px; font-weight: 500;
+          padding: 4px 8px; border-radius: 4px; white-space: nowrap;
+          pointer-events: none; opacity: 0; transition: opacity 0s;
+        }
+        .expand-btn:hover::after { opacity: 1; }
         .changes-row { background: transparent !important; }
         .changes-row:hover { background: transparent !important; }
         .changes-row td { border-bottom: none; padding: 0 !important; }
@@ -1348,7 +1358,7 @@ class ArtifactPromoter extends HTMLElement {
           </td>
           <td>${this.statusBadge(d.status)}</td>
           <td>
-            ${canExpand ? `<button class="expand-btn" data-svc="${this.esc(d.svcName)}" title="Compare changes"><img src="https://static.thenounproject.com/png/4636559-200.png" alt="diff" /></button>` : ''}
+            ${canExpand ? `<button class="expand-btn" data-svc="${this.esc(d.svcName)}" ><img src="https://static.thenounproject.com/png/4636559-200.png" alt="diff" /></button>` : ''}
           </td>
         </tr>
         <tr class="changes-row" id="cr-${safeId}">
