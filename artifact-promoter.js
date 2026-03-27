@@ -306,7 +306,7 @@ class ArtifactPromoter extends HTMLElement {
           align-items: center; justify-content: center;
         }
         .expand-btn:hover { color: var(--primary); border-color: var(--primary); }
-        .expand-btn.open { color: var(--primary); border-color: var(--primary); transform: rotate(90deg); }
+        .expand-btn.open { color: var(--primary); border-color: var(--primary); }
         .changes-row { background: transparent !important; }
         .changes-row:hover { background: transparent !important; }
         .changes-row td { border-bottom: none; padding: 0 !important; }
@@ -1345,7 +1345,7 @@ class ArtifactPromoter extends HTMLElement {
           </td>
           <td>${this.statusBadge(d.status)}</td>
           <td>
-            ${canExpand ? `<button class="expand-btn" data-svc="${this.esc(d.svcName)}" title="Show build & commit details">▶</button>` : ''}
+            ${canExpand ? `<button class="expand-btn" data-svc="${this.esc(d.svcName)}" title="Show build & commit details">±</button>` : ''}
           </td>
         </tr>
         <tr class="changes-row" id="cr-${safeId}">
