@@ -301,12 +301,15 @@ class ArtifactPromoter extends HTMLElement {
         /* Expand button and build-changes panel */
         .expand-btn {
           background: none; border: 1px solid var(--border); cursor: pointer;
-          color: #94a3b8; font-size: 10px; padding: 3px 6px; border-radius: 4px;
+          padding: 4px 6px; border-radius: 4px;
           line-height: 1; transition: all 0.15s; display: inline-flex;
           align-items: center; justify-content: center;
         }
-        .expand-btn:hover { color: var(--primary); border-color: var(--primary); }
-        .expand-btn.open { color: var(--primary); border-color: var(--primary); }
+        .expand-btn img { width: 18px; height: 18px; opacity: 0.45; transition: opacity 0.15s, filter 0.15s; }
+        .expand-btn:hover { border-color: var(--primary); }
+        .expand-btn:hover img { opacity: 1; filter: invert(31%) sepia(98%) saturate(1234%) hue-rotate(228deg) brightness(97%) contrast(93%); }
+        .expand-btn.open { border-color: var(--primary); }
+        .expand-btn.open img { opacity: 1; filter: invert(31%) sepia(98%) saturate(1234%) hue-rotate(228deg) brightness(97%) contrast(93%); }
         .changes-row { background: transparent !important; }
         .changes-row:hover { background: transparent !important; }
         .changes-row td { border-bottom: none; padding: 0 !important; }
@@ -1345,7 +1348,7 @@ class ArtifactPromoter extends HTMLElement {
           </td>
           <td>${this.statusBadge(d.status)}</td>
           <td>
-            ${canExpand ? `<button class="expand-btn" data-svc="${this.esc(d.svcName)}" title="Show build & commit details">±</button>` : ''}
+            ${canExpand ? `<button class="expand-btn" data-svc="${this.esc(d.svcName)}" title="Show build & commit details"><img src="https://static.thenounproject.com/png/4636559-200.png" alt="diff" /></button>` : ''}
           </td>
         </tr>
         <tr class="changes-row" id="cr-${safeId}">
