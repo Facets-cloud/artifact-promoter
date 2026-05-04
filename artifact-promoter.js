@@ -881,6 +881,7 @@ class ArtifactPromoter extends HTMLElement {
 
       const toShow   = [];  // has CI → diff table
       const noCiSvcs = [];  // no CI integration → exclude
+      const svcCiMap = {};  // svcName → resolved CI object (reused in Steps 6 & 7)
 
       candidates.forEach(svcName => {
         const norm = svcName.toLowerCase();
@@ -900,6 +901,7 @@ class ArtifactPromoter extends HTMLElement {
           if (suffixMatches.length === 1) ci = ciMap[suffixMatches[0]];
         }
         if (!ci) { noCiSvcs.push(svcName); return; }
+        svcCiMap[svcName] = ci;
         toShow.push(svcName);
       });
 
@@ -955,10 +957,7 @@ class ArtifactPromoter extends HTMLElement {
       // ENVIRONMENT-type CIs don't use /artifacts/{clusterId}; use /artifacts-ci/{ciName}/artifacts.
       const envCiArtifacts = {};  // ciName → { src: artifactItem|null, tgt: artifactItem|null }
       const envTypeCis = toShow
-        .map(svcName => {
-          const norm = svcName.toLowerCase();
-          return ciMap[norm] || ciMap[norm.replace(/-/g, '_')] || ciMap[norm.replace(/_/g, '-')];
-        })
+        .map(svcName => svcCiMap[svcName])
         .filter((ci, idx, arr) => ci && ci.registrationType === 'ENVIRONMENT' &&
           arr.findIndex(x => x && x.ciName === ci.ciName) === idx);  // deduplicate
 
@@ -980,8 +979,7 @@ class ArtifactPromoter extends HTMLElement {
 
       // ── Step 7: Build diff rows ───────────────────────────────────────────────
       this.diffs = toShow.map(svcName => {
-        const norm = svcName.toLowerCase();
-        const ci = ciMap[norm] || ciMap[norm.replace(/-/g, '_')] || ciMap[norm.replace(/_/g, '-')];
+        const ci = svcCiMap[svcName];
 
         let srcArtifact = null;
         let tgtArtifact = null;
