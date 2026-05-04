@@ -1010,6 +1010,63 @@ class ArtifactPromoter extends HTMLElement {
         }));
       }
 
+      // ── Step 6.5: Re-match services whose CI has no source artifact ───────────
+      // When a CI was matched by name similarity but has no artifact for the source
+      // cluster, search unassigned ENVIRONMENT CIs by token overlap + artifact probe.
+      // e.g. 'lambda-mdgen-excel-processor' → wrongly matched to 'mdgen-excel-processor'
+      //       (suffix match), but the correct CI is 'mdgen-excel-file-processor'.
+      {
+        const assignedCiNames = new Set(Object.values(svcCiMap).map(c => c?.ciName).filter(Boolean));
+        const unassignedEnvCis = Object.values(ciMap).filter(
+          (candidate, idx, arr) =>
+            candidate.registrationType === 'ENVIRONMENT' &&
+            !assignedCiNames.has(candidate.ciName) &&
+            arr.findIndex(x => x.ciName === candidate.ciName) === idx
+        );
+
+        const servicesNeedingRematch = toShow.filter(svcName => {
+          const ci = svcCiMap[svcName];
+          if (!ci || ci.registrationType !== 'ENVIRONMENT') return false;
+          return !envCiArtifacts[ci.ciName]?.src;
+        });
+
+        if (servicesNeedingRematch.length > 0 && unassignedEnvCis.length > 0) {
+          await Promise.all(unassignedEnvCis.map(async candidate => {
+            if (envCiArtifacts[candidate.ciName]) return;
+            try {
+              const res = await fetch(`/cc-ui/v1/artifacts-ci/${encodeURIComponent(candidate.ciName)}/artifacts`);
+              if (res.ok) {
+                const raw = await res.json();
+                const arr = Array.isArray(raw) ? raw : (raw.content || []);
+                const srcItem = arr.find(a => a.registrationValue === srcId && a.artifactId && a.artifactUri !== '-') || null;
+                const tgtItem = arr.find(a => a.registrationValue === tgtId && a.artifactId && a.artifactUri !== '-') || null;
+                envCiArtifacts[candidate.ciName] = { src: srcItem, tgt: tgtItem };
+              }
+            } catch (_) {}
+          }));
+
+          for (const svcName of servicesNeedingRematch) {
+            const svcNorm = svcName.toLowerCase();
+            const svcTokens = svcNorm.split('-').filter(p => p.length > 2);
+            const minOverlap = Math.max(2, svcTokens.length - 1);
+            let bestCi = null;
+            let bestScore = 0;
+            unassignedEnvCis.forEach(candidate => {
+              if (!envCiArtifacts[candidate.ciName]?.src) return;
+              const stripped = candidate.ciName.startsWith(projectPrefix)
+                ? candidate.ciName.slice(projectPrefix.length) : candidate.ciName;
+              const ciTokens = stripped.split('-').filter(p => p.length > 2);
+              const overlap = svcTokens.filter(t => ciTokens.includes(t)).length;
+              if (overlap >= minOverlap && overlap > bestScore) { bestScore = overlap; bestCi = candidate; }
+            });
+            if (bestCi) {
+              console.log('[ArtifactPromoter] Re-matched', svcName, '→', bestCi.ciName, '(replacing', svcCiMap[svcName]?.ciName, ')');
+              svcCiMap[svcName] = bestCi;
+            }
+          }
+        }
+      }
+
       // ── Step 7: Build diff rows ───────────────────────────────────────────────
       this.diffs = toShow.map(svcName => {
         const ci = svcCiMap[svcName];
