@@ -930,7 +930,8 @@ class ArtifactPromoter extends HTMLElement {
           });
           if (bestMatch && !ambiguous) ci = bestMatch;
         }
-        if (!ci) { noCiSvcs.push(svcName); return; }
+        if (!ci) { console.warn('[ArtifactPromoter] No CI found for:', svcName, '| ciMap keys:', Object.keys(ciMap)); noCiSvcs.push(svcName); return; }
+        console.log('[ArtifactPromoter] CI matched for', svcName, '→', ci.ciName, '(type:', ci.registrationType, ')');
         svcCiMap[svcName] = ci;
         toShow.push(svcName);
       });
@@ -998,9 +999,11 @@ class ArtifactPromoter extends HTMLElement {
             if (res.ok) {
               const raw = await res.json();
               const arr = Array.isArray(raw) ? raw : (raw.content || []);
+              console.log('[ArtifactPromoter] CI', ci.ciName, 'artifacts:', arr.length, 'entries. srcId:', srcId, '| registrationValues:', arr.map(a => a.registrationValue));
               // Match by registrationValue === clusterId; skip entries with no real artifact (artifactUri === '-')
               const srcItem = arr.find(a => a.registrationValue === srcId && a.artifactId && a.artifactUri !== '-') || null;
               const tgtItem = arr.find(a => a.registrationValue === tgtId && a.artifactId && a.artifactUri !== '-') || null;
+              console.log('[ArtifactPromoter] CI', ci.ciName, '→ srcItem:', srcItem, '| tgtItem:', tgtItem);
               envCiArtifacts[ci.ciName] = { src: srcItem, tgt: tgtItem };
             }
           } catch (_) { /* leave undefined — treated as no artifact */ }
