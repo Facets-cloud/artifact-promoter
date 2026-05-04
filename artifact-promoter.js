@@ -904,21 +904,31 @@ class ArtifactPromoter extends HTMLElement {
         // e.g. service='lambda-mdgen-excel-processor' (tokens: lambda,mdgen,excel,processor)
         //      CI='mdgen-excel-file-processor'        (tokens: mdgen,excel,file,processor)
         //      overlap=3, minRequired=3 → match
+        // Deduplicates by CI identity (same CI is keyed under both full and stripped name in ciMap).
         if (!ci) {
           const svcTokens = norm.split('-').filter(p => p.length > 2);
           const minOverlap = Math.max(2, svcTokens.length - 1);
-          let bestMatch = null;
-          let bestScore = 0;
-          let ambiguous = false;
+          // Group by CI identity to avoid counting the same CI twice (full name + stripped name)
+          const bestPerCi = new Map(); // ciId → { score, ciObj }
           Object.keys(ciMap).forEach(k => {
+            const candidate = ciMap[k];
+            const cid = candidate?.id || candidate?.ciName;
+            if (!cid) return;
             const ciTokens = k.split('-').filter(p => p.length > 2);
             const overlap = svcTokens.filter(t => ciTokens.includes(t)).length;
             if (overlap >= minOverlap) {
-              if (overlap > bestScore) { bestScore = overlap; bestMatch = k; ambiguous = false; }
-              else if (overlap === bestScore) { ambiguous = true; }
+              const prev = bestPerCi.get(cid);
+              if (!prev || overlap > prev.score) bestPerCi.set(cid, { score: overlap, ciObj: candidate });
             }
           });
-          if (bestMatch && !ambiguous) ci = ciMap[bestMatch];
+          let bestMatch = null;
+          let bestScore = 0;
+          let ambiguous = false;
+          bestPerCi.forEach(({ score, ciObj }) => {
+            if (score > bestScore) { bestScore = score; bestMatch = ciObj; ambiguous = false; }
+            else if (score === bestScore) { ambiguous = true; }
+          });
+          if (bestMatch && !ambiguous) ci = bestMatch;
         }
         if (!ci) { noCiSvcs.push(svcName); return; }
         svcCiMap[svcName] = ci;
