@@ -900,6 +900,26 @@ class ArtifactPromoter extends HTMLElement {
           const suffixMatches = Object.keys(ciMap).filter(k => norm.endsWith('-' + k));
           if (suffixMatches.length === 1) ci = ciMap[suffixMatches[0]];
         }
+        // Token-overlap fallback: handles cases where service and CI names share most tokens but differ
+        // e.g. service='lambda-mdgen-excel-processor' (tokens: lambda,mdgen,excel,processor)
+        //      CI='mdgen-excel-file-processor'        (tokens: mdgen,excel,file,processor)
+        //      overlap=3, minRequired=3 → match
+        if (!ci) {
+          const svcTokens = norm.split('-').filter(p => p.length > 2);
+          const minOverlap = Math.max(2, svcTokens.length - 1);
+          let bestMatch = null;
+          let bestScore = 0;
+          let ambiguous = false;
+          Object.keys(ciMap).forEach(k => {
+            const ciTokens = k.split('-').filter(p => p.length > 2);
+            const overlap = svcTokens.filter(t => ciTokens.includes(t)).length;
+            if (overlap >= minOverlap) {
+              if (overlap > bestScore) { bestScore = overlap; bestMatch = k; ambiguous = false; }
+              else if (overlap === bestScore) { ambiguous = true; }
+            }
+          });
+          if (bestMatch && !ambiguous) ci = ciMap[bestMatch];
+        }
         if (!ci) { noCiSvcs.push(svcName); return; }
         svcCiMap[svcName] = ci;
         toShow.push(svcName);
@@ -1013,8 +1033,21 @@ class ArtifactPromoter extends HTMLElement {
           }
         } else {
           // Cluster-level artifacts (RELEASE_STREAM / HYBRID)
-          const srcKey = Object.keys(this.sourceArtifacts).find(k => k.toLowerCase() === norm);
-          const tgtKey = Object.keys(this.targetArtifacts).find(k => k.toLowerCase() === norm);
+          // Try lookup by service name first, then by CI artifact name (ci.ciName with/without project prefix).
+          // This handles cases where the CI artifact name differs from the blueprint resource name
+          // e.g. service='lambda-mdgen-excel-processor', CI artifact name='mdgen-excel-file-processor'
+          const svcNorm = svcName.toLowerCase();
+          const projectPfx = (this.selectedProject + '-').toLowerCase();
+          const ciNameFull = (ci?.ciName || '').toLowerCase();
+          const ciNameStripped = ciNameFull.startsWith(projectPfx) ? ciNameFull.slice(projectPfx.length) : ciNameFull;
+          const srcKey = Object.keys(this.sourceArtifacts).find(k => {
+            const kl = k.toLowerCase();
+            return kl === svcNorm || kl === ciNameFull || kl === ciNameStripped;
+          });
+          const tgtKey = Object.keys(this.targetArtifacts).find(k => {
+            const kl = k.toLowerCase();
+            return kl === svcNorm || kl === ciNameFull || kl === ciNameStripped;
+          });
           srcArtifact = srcKey ? this.sourceArtifacts[srcKey] : null;
           tgtArtifact = tgtKey ? this.targetArtifacts[tgtKey] : null;
         }
