@@ -1030,6 +1030,7 @@ class ArtifactPromoter extends HTMLElement {
           return !envCiArtifacts[ci.ciName]?.src;
         });
 
+        const pfx = this.selectedProject.toLowerCase() + '-';
         if (servicesNeedingRematch.length > 0 && unassignedEnvCis.length > 0) {
           await Promise.all(unassignedEnvCis.map(async candidate => {
             if (envCiArtifacts[candidate.ciName]) return;
@@ -1053,8 +1054,8 @@ class ArtifactPromoter extends HTMLElement {
             let bestScore = 0;
             unassignedEnvCis.forEach(candidate => {
               if (!envCiArtifacts[candidate.ciName]?.src) return;
-              const stripped = candidate.ciName.startsWith(projectPrefix)
-                ? candidate.ciName.slice(projectPrefix.length) : candidate.ciName;
+              const stripped = candidate.ciName.startsWith(pfx)
+                ? candidate.ciName.slice(pfx.length) : candidate.ciName;
               const ciTokens = stripped.split('-').filter(p => p.length > 2);
               const overlap = svcTokens.filter(t => ciTokens.includes(t)).length;
               if (overlap >= minOverlap && overlap > bestScore) { bestScore = overlap; bestCi = candidate; }
